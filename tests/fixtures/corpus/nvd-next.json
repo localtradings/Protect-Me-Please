@@ -1,0 +1,27 @@
+{
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2024-0001",
+        "descriptions": [{ "lang": "en", "value": "Next.js authorization middleware bypass in fixture" }],
+        "metrics": { "cvssMetricV31": [{ "cvssData": { "baseScore": 8.1, "baseSeverity": "HIGH" } }] },
+        "weaknesses": [{ "description": [{ "lang": "en", "value": "CWE-863" }] }],
+        "references": { "referenceData": [{ "url": "https://example.test/nvd/CVE-2024-0001" }] },
+        "configurations": [
+          {
+            "nodes": [
+              {
+                "cpeMatch": [
+                  {
+                    "criteria": "cpe:2.3:a:vercel:next.js:*:*:*:*:*:node.js:*:*",
+                    "versionEndExcluding": "14.1.1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

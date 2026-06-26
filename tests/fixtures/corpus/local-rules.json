@@ -1,0 +1,12 @@
+[
+  {
+    "id": "BP-RULE-AI-TOOL-001",
+    "source": "local-rule-pack",
+    "summary": "Dangerous AI tool exposed without guardrails",
+    "severity": "critical",
+    "cwe": ["CWE-749"],
+    "affectedPackages": [],
+    "exploitLikelihood": 0.8,
+    "remediation": "Add tool allowlists, argument validation, audit logs, and approval gates."
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "id": "GHSA-xxxx-yyyy-zzzz",
+  "ghsaId": "GHSA-xxxx-yyyy-zzzz",
+  "cveId": "CVE-2024-0001",
+  "summary": "Next.js authorization middleware bypass in fixture",
+  "severity": "HIGH",
+  "cvss": { "score": 8.1 },
+  "cwes": { "nodes": [{ "cweId": "CWE-863" }] },
+  "vulnerabilities": {
+    "nodes": [
+      {
+        "package": { "ecosystem": "NPM", "name": "next" },
+        "vulnerableVersionRange": "<14.1.1",
+        "firstPatchedVersion": { "identifier": "14.1.1" }
+      }
+    ]
+  },
+  "references": [{ "url": "https://example.test/ghsa" }]
+}

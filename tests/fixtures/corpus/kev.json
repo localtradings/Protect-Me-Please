@@ -1,0 +1,14 @@
+{
+  "title": "CISA Known Exploited Vulnerabilities Catalog",
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2024-0001",
+      "vendorProject": "Vercel",
+      "product": "Next.js",
+      "vulnerabilityName": "Fixture exploited Next.js authorization issue",
+      "dateAdded": "2024-01-01",
+      "dueDate": "2024-02-01",
+      "requiredAction": "Apply updates per vendor instructions."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.7.5",
+  "id": "CVE-2024-0001",
+  "aliases": ["GHSA-xxxx-yyyy-zzzz"],
+  "summary": "Next.js authorization middleware bypass in fixture",
+  "details": "Fixture advisory for reachability tests.",
+  "severity": [{ "type": "CVSS_V3", "score": "8.1" }],
+  "affected": [
+    {
+      "package": { "ecosystem": "npm", "name": "next" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "14.1.1" }] }]
+    }
+  ],
+  "references": [{ "type": "ADVISORY", "url": "https://example.test/CVE-2024-0001" }],
+  "database_specific": { "cwe_ids": ["CWE-863"] }
+}
