@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.example
+.breachproof/
+reports/*.json
+reports/*.sarif
+reports/*.md
+reports/patches/
+!reports/README.md
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
