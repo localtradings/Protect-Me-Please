@@ -1,0 +1,137 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { buildAttackGraph } from '../agents/attack-graph.js';
+import { createEvidenceBundle, createValidationPlan } from '../agents/attack-planner.js';
+import { generatePatchArtifacts } from '../agents/fix-agent.js';
+import { buildReachabilityGraph, matchReachableVulnerabilities } from '../agents/reachability.js';
+import { mapRepository } from '../agents/repo-mapper.js';
+import { validateSystemMap } from '../agents/safe-validation.js';
+import { createVerification } from '../agents/verification-agent.js';
+import { buildLocalVulnerabilityCorpus, matchRelevantVulnerabilities, summarizeVulnerabilityCorpus } from '../agents/vulnerability-corpus.js';
+import { createReportModel, renderJsonReport, renderMarkdownReport, renderSarifReport } from '../reporting/report-generator.js';
+import { appendAuditEvent } from './audit.js';
+import { writeScopeConfig } from './config.js';
+import { approveScope, approvalMatchesConfig, loadApproval } from './scope.js';
+import { initializeStateStore, recordRun } from './state.js';
+import type { PatchSummary, ProtectMode, ScopeConfig, Verification } from './types.js';
+
+export interface RunAutonomousWorkflowInput {
+  workspace: string;
+  config: ScopeConfig;
+  yes?: boolean;
+  apply?: boolean;
+  mode?: ProtectMode;
+}
+
+export interface RunAutonomousWorkflowResult {
+  artifacts: string[];
+  patchSummary: PatchSummary;
+  verification: Verification;
+  findingsCount: number;
+}
+
+async function writeJson(file: string, value: unknown): Promise<string> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+async function writeText(file: string, value: string): Promise<string> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, value, 'utf8');
+  return file;
+}
+
+export async function ensureWorkflowApproval(workspace: string, config: ScopeConfig, yes = false): Promise<void> {
+  const approval = await loadApproval(workspace);
+  if (approvalMatchesConfig(approval, config)) return;
+  if (!yes) {
+    throw new Error('Scope is not approved. Run `breachproof init --yes` after confirming you own or are authorized to test this workspace.');
+  }
+  await writeScopeConfig(workspace, config);
+  await approveScope(workspace, config);
+}
+
+export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): Promise<RunAutonomousWorkflowResult> {
+  const workspace = path.resolve(input.workspace);
+  const mode = input.mode ?? input.config.mode;
+  const config: ScopeConfig = {
+    ...input.config,
+    mode,
+    workspace,
+    autofix: {
+      ...input.config.autofix,
+      apply: input.apply ?? input.config.autofix.apply
+    }
+  };
+  const reportsDir = path.join(workspace, config.reportsDir);
+  await mkdir(reportsDir, { recursive: true });
+  await ensureWorkflowApproval(workspace, config, input.yes);
+
+  const db = initializeStateStore(workspace);
+  recordRun(db, { command: 'run', mode: config.mode, status: 'started' });
+
+  const systemMap = await mapRepository(workspace);
+  const corpus = buildLocalVulnerabilityCorpus();
+  const reachabilityGraph = await buildReachabilityGraph(workspace, systemMap);
+  const reachableVulnerabilities = matchReachableVulnerabilities(systemMap, reachabilityGraph, corpus);
+  const relevantVulnerabilities = matchRelevantVulnerabilities(systemMap, corpus);
+  const attackGraph = buildAttackGraph(systemMap, corpus, reachabilityGraph);
+  const findings = validateSystemMap(systemMap, attackGraph, corpus, reachabilityGraph);
+  const validationPlan = createValidationPlan(findings, reachabilityGraph);
+  const evidence = createEvidenceBundle(findings);
+  const patchSummary = await generatePatchArtifacts({
+    workspace,
+    reportsDir: config.reportsDir,
+    findings,
+    apply: config.autofix.apply
+  });
+  const verification = createVerification(findings, patchSummary);
+  const corpusSummary = summarizeVulnerabilityCorpus(corpus, {
+    matchedComponents: relevantVulnerabilities.length,
+    possiblyReachableIssues: reachableVulnerabilities.length + findings.filter((finding) => finding.ruleId !== 'BP-DEP-001').length,
+    safelyValidatedIssues: findings.filter((finding) => finding.status === 'validated').length,
+    autoFixedIssues: patchSummary.items.filter((item) => item.status === 'verified_fixed').length,
+    manualReviewIssues: verification.items.filter((item) => item.status === 'manual_review').length
+  });
+  const report = createReportModel({
+    workspace,
+    mode: config.mode,
+    systemMap,
+    reachabilityGraph,
+    attackGraph,
+    findings,
+    corpusSummary,
+    validationPlan,
+    evidence,
+    patchSummary,
+    verification,
+    scopeApproved: true
+  });
+
+  const artifacts = [
+    await writeJson(path.join(reportsDir, 'system-map.json'), systemMap),
+    await writeJson(path.join(reportsDir, 'vulnerability-corpus-summary.json'), corpusSummary),
+    await writeJson(path.join(reportsDir, 'reachability-graph.json'), reachabilityGraph),
+    await writeJson(path.join(reportsDir, 'attack-graph.json'), attackGraph),
+    await writeJson(path.join(reportsDir, 'validation-plan.json'), validationPlan),
+    await writeJson(path.join(reportsDir, 'evidence.json'), evidence),
+    await writeJson(path.join(reportsDir, 'patch-summary.json'), patchSummary),
+    await writeJson(path.join(reportsDir, 'verification.json'), verification),
+    await writeText(path.join(reportsDir, 'final-report.md'), renderMarkdownReport(report)),
+    await writeJson(path.join(reportsDir, 'final-report.json'), JSON.parse(renderJsonReport(report))),
+    await writeJson(path.join(reportsDir, 'final-report.sarif'), renderSarifReport(report))
+  ];
+
+  recordRun(db, { command: 'run', mode: config.mode, status: 'completed' });
+  db.close();
+  await appendAuditEvent(workspace, {
+    action: 'run',
+    actor: 'cli',
+    mode: config.mode,
+    status: 'completed',
+    message: `BreachProof autonomous workflow completed with ${findings.length} findings`
+  });
+
+  return { artifacts, patchSummary, verification, findingsCount: findings.length };
+}

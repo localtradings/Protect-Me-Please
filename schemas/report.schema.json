@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breachproof.local/schemas/report.schema.json",
+  "title": "BreachProof Report",
+  "type": "object",
+  "required": ["product", "project", "mode", "summary", "findings"],
+  "properties": {
+    "product": { "const": "BreachProof" },
+    "project": { "type": "string" },
+    "mode": { "enum": ["local", "staging", "ci", "audit", "validate", "fix", "auto"] },
+    "summary": { "type": "object" },
+    "findings": { "type": "array" }
+  }
+}

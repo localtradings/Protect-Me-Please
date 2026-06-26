@@ -1,0 +1,20 @@
+version: 1
+product: BreachProof
+mode: local
+workspace: /workspace
+allowedPaths:
+  - .
+stagingTargets: []
+reportsDir: reports
+stateDir: .breachproof
+autofix:
+  enabled: false
+  apply: false
+  createPrReadyPatch: true
+ci:
+  failOnSeverity: critical
+  uploadSarif: true
+plugins:
+  enabled: true
+  directories:
+    - plugins

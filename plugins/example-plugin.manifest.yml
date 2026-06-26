@@ -1,0 +1,12 @@
+name: nextjs-authz-pack
+version: 0.1.0
+type: validator
+supportedFrameworks:
+  - nextjs
+inputs:
+  - system-map
+outputs:
+  - findings
+permissionsNeeded:
+  - read-workspace
+entrypoint: ./dist/index.js
