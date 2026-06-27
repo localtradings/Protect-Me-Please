@@ -1,0 +1,15 @@
+name: ai-agent-pack
+version: 0.1.0
+type: ai-agent-policy-check
+supportedFrameworks:
+  - nextjs
+  - express
+inputs:
+  - system-map
+  - source-files
+outputs:
+  - ai-lab
+  - findings
+permissionsNeeded:
+  - read-workspace
+entrypoint: ./dist/index.js

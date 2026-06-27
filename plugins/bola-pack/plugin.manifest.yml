@@ -1,0 +1,17 @@
+name: bola-pack
+version: 0.1.0
+type: analyzer
+supportedFrameworks:
+  - nextjs
+  - express
+  - prisma
+inputs:
+  - system-map
+  - reachability-graph
+outputs:
+  - bola-map
+  - ownership-traces
+  - findings
+permissionsNeeded:
+  - read-workspace
+entrypoint: ./dist/index.js

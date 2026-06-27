@@ -1,0 +1,17 @@
+name: openapi-stateful-pack
+version: 0.1.0
+type: validator
+supportedFrameworks:
+  - openapi
+  - nextjs
+  - express
+inputs:
+  - openapi
+  - route-map
+  - range-seed
+outputs:
+  - request-sequences
+  - evidence
+permissionsNeeded:
+  - read-workspace
+entrypoint: ./dist/index.js

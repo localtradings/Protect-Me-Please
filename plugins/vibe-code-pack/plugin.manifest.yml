@@ -1,0 +1,15 @@
+name: vibe-code-pack
+version: 0.1.0
+type: validator
+supportedFrameworks:
+  - nextjs
+  - express
+  - prisma
+inputs:
+  - system-map
+  - findings
+outputs:
+  - vibe-audit
+permissionsNeeded:
+  - read-workspace
+entrypoint: ./dist/index.js
