@@ -15,6 +15,16 @@ export type ProofMode = z.infer<typeof proofModeSchema>;
 export const fixStatusSchema = z.enum(['suggested', 'patch_created', 'test_added', 'verified_fixed', 'needs_human_review']);
 export type FixStatus = z.infer<typeof fixStatusSchema>;
 
+export const proofVerificationStatusSchema = z.enum([
+  'unverified',
+  'simulated',
+  'confirmed_local',
+  'patch_created',
+  'verified_fixed',
+  'needs_human_review'
+]);
+export type ProofVerificationStatus = z.infer<typeof proofVerificationStatusSchema>;
+
 export const scopeConfigSchema = z.object({
   version: z.literal(1),
   product: z.literal(productName),
@@ -334,7 +344,7 @@ export const verificationSchema = z.object({
   items: z.array(
     z.object({
       findingId: z.string(),
-      status: z.enum(['not_run', 'passed', 'failed', 'manual_review']),
+      status: proofVerificationStatusSchema,
       proofMode: proofModeSchema,
       productionTouched: z.boolean(),
       destructive: z.boolean(),
@@ -369,7 +379,19 @@ export type ProtectReport = z.infer<typeof reportSchema>;
 export const pluginManifestSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
-  type: z.enum(['analyzer', 'validator', 'vulnerability-feed', 'reporter', 'fixer', 'rule-pack']),
+  type: z.enum([
+    'analyzer',
+    'validator',
+    'vulnerability-feed',
+    'reporter',
+    'fixer',
+    'rule-pack',
+    'invariant-pack',
+    'range-provider',
+    'patch-generator',
+    'report-renderer',
+    'ai-agent-policy-check'
+  ]),
   supportedFrameworks: z.array(z.string()),
   inputs: z.array(z.string()),
   outputs: z.array(z.string()),
