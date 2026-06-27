@@ -3,6 +3,7 @@ dist/
 coverage/
 .DS_Store
 .superpowers/
+.worktrees/
 .env
 .env.*
 !.env.example
