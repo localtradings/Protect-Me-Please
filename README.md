@@ -1,15 +1,15 @@
 # BreachProof
 
-**Prove real breach paths locally. Fix them. Verify they stay fixed.**
+**Build a local cyber range from your app. Prove reachable breach paths. Generate fixes. Verify they stay fixed.**
 
-BreachProof is a local autonomous security validation platform for repositories and environments you own or are explicitly authorized to test. It is not a generic vulnerability scanner, not a public exploit bot, and not a toy checklist. It maps the app, reasons about exploitability, validates safely with local proof, generates patch and regression-test artifacts, and verifies fixes after explicit application.
+BreachProof is a local proof engine for repositories and environments you own or are explicitly authorized to test. It is not a scanner, not a CVE list, and not a generic AI wrapper. It maps your app, builds a fake-data local cyber range, tests security invariants, turns breach paths into replayable evidence, generates competing patch candidates, and produces audit-ready reports.
 
 ## What Makes BreachProof Different
 
 Traditional scanners report possible issues. BreachProof is built around a stronger loop:
 
 ```text
-map -> corpus -> reachability -> attack plan -> safe proof -> patch artifact -> regression test -> verification -> final report
+map -> corpus -> reachability -> range -> invariants -> proof -> patch tournament -> verification -> final report
 ```
 
 The goal is not to dump every CVE or every lint finding. The goal is to answer:
@@ -18,7 +18,7 @@ The goal is not to dump every CVE or every lint finding. The goal is to answer:
 - Is it reachable from a route, job, webhook, upload, or AI tool flow?
 - Is there a realistic breach path?
 - Can BreachProof prove it safely with local fixtures or static trace evidence?
-- Can it produce a focused fix and regression test artifact?
+- Can it produce multiple focused fixes and regression test artifacts?
 - Does the same validation pass after the fix is explicitly applied?
 
 ## Safety Model
@@ -83,14 +83,24 @@ The approval stores timestamp, workspace, mode, allowed paths, staging targets, 
 
 ```sh
 breachproof run --auto
+breachproof proof run
+breachproof proof replay <findingId>
+breachproof range init
+breachproof range seed
+breachproof invariants init
+breachproof invariants test
+breachproof graph view
 breachproof map
 breachproof corpus import advisories/osv.json advisories/epss.csv
 breachproof reachability
 breachproof validate --focus authz
-breachproof fix
+breachproof fix --tournament
 breachproof verify
 breachproof report --format markdown
 breachproof report --format sarif
+breachproof report --format html
+breachproof vibe audit
+breachproof ai-lab run
 breachproof skill export --codex
 breachproof ci
 breachproof doctor
@@ -114,11 +124,20 @@ Modes:
 - `reports/vulnerability-corpus-summary.json`
 - `reports/reachability-graph.json`
 - `reports/attack-graph.json`
+- `reports/bola-map.json`
+- `reports/ownership-traces.json`
 - `reports/validation-plan.json`
+- `reports/invariant-results.json`
+- `reports/request-sequences.json`
 - `reports/evidence.json`
+- `reports/evidence-summary.json`
 - `reports/patch-summary.json`
+- `reports/patch-tournament.json`
 - `reports/verification.json`
+- `reports/range-summary.json`
 - `reports/final-report.md`
+- `reports/final-report.html`
+- `reports/final-report.json`
 - `reports/final-report.sarif`
 
 Per-finding patch proposals live under:
@@ -127,7 +146,78 @@ Per-finding patch proposals live under:
 reports/patches/<findingId>/
 ```
 
-Each patch folder contains a `patch.diff`, proposed regression test content, and status metadata through `patch-summary.json`.
+Each patch folder contains `patch.diff`, proposed regression test content, tournament candidates (`candidate-a.patch`, `candidate-b.patch`, `candidate-c.patch`, `candidate-d.patch`), `scorecard.json`, and `recommended.patch`.
+
+Replayable evidence lives under:
+
+```text
+reports/evidence/<findingId>/
+```
+
+Each evidence folder contains `setup.json`, `requests.har`, `request-sequence.json`, `expected.json`, `actual-before.json`, `actual-after.json`, `replay.sh`, `regression.test.ts`, and `README.md`.
+
+Local cyber range artifacts live under:
+
+```text
+.breachproof/range/
+```
+
+The range uses fake tenants, fake users, fake invoices/projects/files, a fake PostgreSQL seed, and mock webhook/payment/email provider placeholders. It never imports production secrets or production records.
+
+## Proof Mode
+
+Proof Mode focuses on evidence, not alerts:
+
+```sh
+breachproof proof run --yes
+breachproof proof replay <findingId>
+breachproof report --format html
+```
+
+`proof run` generates replayable evidence for confirmed or simulated findings. If a full HTTP replay is not possible yet, the evidence still validates the artifact structure and prints exact local reproduction steps. BreachProof does not claim `verified_fixed` unless a real after-replay exists.
+
+## One-Command Demo
+
+The fixture in `tests/fixtures/sample-next-express` demonstrates:
+
+- Cross-tenant invoice access: a user-controlled invoice id reaches `prisma.invoice.findUnique` without a tenant filter.
+- Webhook trust abuse: an unsigned webhook is accepted.
+- AI tool misuse: dangerous tools are reachable without allowlist or approval policy.
+
+Run:
+
+```sh
+REPO="$PWD"
+tmpdir="$(mktemp -d)"
+cp -R tests/fixtures/sample-next-express/. "$tmpdir"
+(cd "$tmpdir" && npx tsx "$REPO/src/cli/index.ts" run --auto --yes)
+```
+
+Open `reports/final-report.html`, then inspect `reports/evidence/<findingId>/README.md` and `reports/patches/<findingId>/scorecard.json`.
+
+## Security Invariants
+
+Create the default invariant file:
+
+```sh
+breachproof invariants init
+```
+
+This writes `breachproof.invariants.yml` with:
+
+- `tenant-isolation`
+- `object-ownership`
+- `admin-only-actions`
+- `price-integrity`
+- `webhook-signature-required`
+- `file-upload-policy`
+- `ai-tool-approval`
+
+Evaluate it:
+
+```sh
+breachproof invariants test
+```
 
 ## Vulnerability Intelligence
 
@@ -184,6 +274,8 @@ Plugins use manifest fields:
 - `permissionsNeeded`
 - `entrypoint`
 
+Supported plugin contribution types include analyzers, validators, invariant packs, range providers, vulnerability feeds, patch generators, report renderers, and AI-agent policy checks.
+
 Export a Codex-compatible skill pack:
 
 ```sh
@@ -199,6 +291,7 @@ breachproof ci
 ```
 
 The included GitHub Actions workflow runs typecheck, lint, tests, build, doctor, and CI SARIF generation.
+It also writes a Markdown step summary, uploads the HTML/Markdown/SARIF reports as an artifact, and can comment a short PR summary when the workflow token has permission.
 
 ## Limitations
 

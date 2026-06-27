@@ -17,6 +17,9 @@ Do not use this project against public targets, third-party systems, accounts, n
 - Validation must use fake/local/staging-safe data.
 - Unsafe exploitation is marked for manual review.
 - The project does not include weaponized exploit payloads by default.
+- Proof Mode writes replayable evidence with fake users, fake tenants, fake records, and local-only request sequences.
+- Patch tournaments generate patch artifacts only. They do not edit the analyzed repository unless a future explicit apply flow is approved and enabled.
+- AI-agent checks are policy-based and do not include jailbreak payload libraries or destructive tool execution.
 
 ## Reporting Vulnerabilities In This Repository
 
