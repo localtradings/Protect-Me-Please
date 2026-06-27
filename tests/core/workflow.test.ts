@@ -26,11 +26,19 @@ describe('autonomous proof and fix workflow', () => {
           'vulnerability-corpus-summary.json',
           'reachability-graph.json',
           'attack-graph.json',
+          'bola-map.json',
+          'ownership-traces.json',
           'validation-plan.json',
+          'invariant-results.json',
+          'request-sequences.json',
           'evidence.json',
+          'evidence-summary.json',
           'patch-summary.json',
+          'patch-tournament.json',
           'verification.json',
+          'range-summary.json',
           'final-report.md',
+          'final-report.html',
           'final-report.sarif'
         ])
       );

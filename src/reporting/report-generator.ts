@@ -48,7 +48,7 @@ function defaultVerification(findings: Finding[]): Verification {
     generatedAt: new Date().toISOString(),
     items: findings.map((finding) => ({
       findingId: finding.id,
-      status: finding.status === 'manual_review' ? 'manual_review' : 'not_run',
+      status: finding.status === 'manual_review' ? 'needs_human_review' : 'unverified',
       proofMode: finding.proofMode,
       productionTouched: false,
       destructive: false,
