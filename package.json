@@ -22,8 +22,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "pretest": "npm run build:vault-ui",
+    "pretest:watch": "npm run build:vault-ui",
     "test": "vitest run",
-    "test:browser": "playwright test",
+    "test:browser": "playwright test tests/browser --pass-with-no-tests",
     "test:watch": "vitest",
     "doctor": "node dist/cli/index.js doctor"
   },

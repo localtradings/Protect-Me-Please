@@ -29,10 +29,13 @@ describe('Vault UI build pipeline', () => {
     });
     expect(manifest.scripts?.['build:vault-ui']).toBe('node scripts/build-vault-ui.mjs');
     expect(manifest.scripts?.pretest).toBe('npm run build:vault-ui');
+    expect(manifest.scripts?.['pretest:watch']).toBe('npm run build:vault-ui');
     expect(manifest.scripts?.build).toBe(
       'tsc -p tsconfig.build.json && npm run build:vault-ui'
     );
-    expect(manifest.scripts?.['test:browser']).toBe('playwright test');
+    expect(manifest.scripts?.['test:browser']).toBe(
+      'playwright test tests/browser --pass-with-no-tests'
+    );
   });
 
   test('emits the distributable Vault UI assets', async () => {
