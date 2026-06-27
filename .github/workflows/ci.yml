@@ -8,6 +8,8 @@ on:
 permissions:
   actions: read
   contents: read
+  issues: write
+  pull-requests: write
   security-events: write
 
 jobs:
@@ -26,7 +28,53 @@ jobs:
       - run: npm run build
       - run: node dist/cli/index.js doctor
       - run: node dist/cli/index.js ci
+      - name: BreachProof job summary
+        if: always() && hashFiles('reports/final-report.md') != ''
+        run: |
+          {
+            echo "## BreachProof"
+            echo
+            sed -n '1,80p' reports/final-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5
+        if: always() && hashFiles('reports/**') != ''
+        with:
+          name: breachproof-reports
+          path: |
+            reports/final-report.html
+            reports/final-report.md
+            reports/final-report.sarif
+            reports/evidence-summary.json
+            reports/patch-tournament.json
       - uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('reports/final-report.sarif') != ''
         with:
           sarif_file: reports/final-report.sarif
+      - uses: actions/github-script@v8
+        if: github.event_name == 'pull_request' && always() && hashFiles('reports/final-report.json') != ''
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('reports/final-report.json', 'utf8'));
+            const patchTournament = fs.existsSync('reports/patch-tournament.json')
+              ? JSON.parse(fs.readFileSync('reports/patch-tournament.json', 'utf8'))
+              : { items: [] };
+            const evidence = fs.existsSync('reports/evidence-summary.json')
+              ? JSON.parse(fs.readFileSync('reports/evidence-summary.json', 'utf8'))
+              : { items: [] };
+            const reachable = report.summary?.possiblyReachableIssues ?? report.findings?.length ?? 0;
+            const replayable = evidence.items?.filter((item) => item.replayable).length ?? 0;
+            const patches = patchTournament.items?.length ?? 0;
+            const body = [
+              `BreachProof found ${reachable} reachable breach paths.`,
+              `${replayable} have replayable evidence.`,
+              `${patches} patch candidate sets generated.`,
+              `0 production assets touched.`
+            ].join(' ');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

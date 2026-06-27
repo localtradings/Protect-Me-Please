@@ -2,13 +2,17 @@ node_modules/
 dist/
 coverage/
 .DS_Store
+.superpowers/
 .env
 .env.*
 !.env.example
 .breachproof/
+breachproof.scope.yml
 reports/*.json
 reports/*.sarif
 reports/*.md
+reports/*.html
+reports/evidence/
 reports/patches/
 !reports/README.md
 *.log
