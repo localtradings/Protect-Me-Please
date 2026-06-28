@@ -308,4 +308,14 @@ export interface FindingSimilarity {
   score: number;
   signals: string[];
   exactMatch: boolean;
+  components: FindingSimilarityComponents;
+}
+
+export interface FindingSimilarityComponents {
+  same_rule: number;
+  same_control_family: number;
+  same_sink: number;
+  route_tokens: number;
+  same_framework_file_role: number;
+  evidence_tags: number;
 }

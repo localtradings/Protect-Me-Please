@@ -26,3 +26,32 @@ export function makeFinding(overrides: Partial<Finding> = {}): Finding {
     ...overrides
   };
 }
+
+export function makeProductionBolaFinding(overrides: Partial<Finding> = {}): Finding {
+  return makeFinding({
+    ruleId: 'BP-BOLA-001',
+    title: 'Broken object-level authorization path is reachable',
+    affectedRoutes: ['/api/invoices/[id]'],
+    attackPath: [
+      'user-controlled id',
+      'GET /api/invoices/[id]',
+      'Invoice.findUnique',
+      'missing tenant or owner predicate'
+    ],
+    evidence: 'User-controlled id reaches Prisma Invoice.findUnique without a tenantId or ownerId predicate.',
+    ...overrides
+  });
+}
+
+export function makeAiToolFinding(overrides: Partial<Finding> = {}): Finding {
+  return makeFinding({
+    ruleId: 'BP-RULE-AI-TOOL-001',
+    title: 'Dangerous AI tool call lacks guardrails',
+    severity: 'critical',
+    affectedFiles: ['src/agents/user-tools.ts'],
+    affectedRoutes: ['POST /api/agents/execute'],
+    attackPath: ['untrusted user input', 'deleteUser', 'destructive or privileged action'],
+    evidence: 'deleteUser tool is reachable without an allowlist or policy guardrails.',
+    ...overrides
+  });
+}

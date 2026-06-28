@@ -5,7 +5,7 @@ const httpMethodPattern = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+([^\s?#]
 const dynamicSegmentPattern = /^(?:\[[^\]]+\]|:[A-Za-z_][A-Za-z0-9_]*|\d+|[0-9a-f]{8}-[0-9a-f-]{27,}|[0-9a-f]{24})$/i;
 const nextRouteFilePattern = /^(?:app\/api\/(?:.*\/)?route\.[cm]?[jt]sx?|pages\/api\/)/i;
 
-const controlFamilies: Record<string, readonly string[]> = {
+const controlTokens: Record<string, readonly string[]> = {
   AI: ['ai_guardrails'],
   AUTH: ['authentication'],
   AUTHZ: ['authorization'],
@@ -13,9 +13,18 @@ const controlFamilies: Record<string, readonly string[]> = {
   BOLA: ['authorization', 'tenant_isolation'],
   CI: ['ci_trust'],
   DEP: ['dependency_integrity'],
+  OWNER: ['tenant_isolation'],
+  OWNERSHIP: ['tenant_isolation'],
+  TENANT: ['tenant_isolation'],
+  TOOL: ['tool_safety'],
   UPLOAD: ['upload_validation'],
   WEBHOOK: ['webhook_integrity']
 };
+
+const genericSinkDescriptionPattern = /\b(?:authorization decision|control|destructive|guardrail|missing|predicate|privileged action|request body|risk|untrusted|user-controlled|without)\b/i;
+const qualifiedSinkPattern = /\b(?:prisma\.)?([A-Za-z_$][A-Za-z0-9_$]*\.(?:create|delete|deleteMany|execute|findFirst|findMany|findUnique|insert|invoke|query|read|remove|save|update|updateMany|upsert|write))\b/gi;
+const commandSinkPattern = /\b((?:approve|create|delete|deploy|disable|execute|fetch|get|insert|invoke|list|read|refund|remove|revoke|run|save|send|transfer|update|write)[A-Z][A-Za-z0-9_$]*)\b/g;
+const namedSinkPattern = /\b([A-Z][A-Za-z0-9]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?|[a-z][A-Za-z0-9]*(?:Action|Handler|Model|Repository|Service|Sink|Tool))\b/g;
 
 const evidenceStopWords = new Set([
   'and',
@@ -83,10 +92,13 @@ function normalizedFile(file: string): string {
     .replace(/\\/g, '/')
     .replace(/:\d+(?::\d+)?$/, '')
     .replace(/^[A-Za-z]:/, '');
-  const sourceRoot = normalized.match(/(?:^|\/)(app|pages|src|routes?|api|prisma|tests?|\.github)\//);
-  if (sourceRoot?.index === undefined) return normalized.replace(/^\/+/, '');
-  const rootIndex = normalized[sourceRoot.index] === '/' ? sourceRoot.index + 1 : sourceRoot.index;
-  return normalized.slice(rootIndex);
+  const repositoryAnchorPattern = /(?:^|\/)(?=(?:app\/api\/(?:.*\/)?route\.[cm]?[jt]sx?$|pages\/api\/|src\/(?:routes?|routers?)\/|src\/(?:app|index|server)\.[cm]?[jt]sx?$|routes?\/|routers?\/|prisma\/|tests?\/|\.github\/))/gi;
+  let rootIndex: number | undefined;
+  for (const match of normalized.matchAll(repositoryAnchorPattern)) {
+    const matchIndex = match.index;
+    rootIndex = normalized[matchIndex] === '/' ? matchIndex + 1 : matchIndex;
+  }
+  return rootIndex === undefined ? normalized.replace(/^\/+/, '') : normalized.slice(rootIndex);
 }
 
 function inferFramework(files: string[]): string {
@@ -122,19 +134,68 @@ function normalizeRuleId(ruleId: string): string {
 }
 
 function controlTagsFor(ruleId: string): string[] {
-  const family = normalizeRuleId(ruleId).split('-')[1] ?? '';
-  return [...(controlFamilies[family] ?? [`rule_${family.toLowerCase() || 'unknown'}`])].sort();
+  const tags = new Set<string>();
+  for (const token of normalizeRuleId(ruleId).split('-')) {
+    for (const tag of controlTokens[token] ?? []) tags.add(tag);
+  }
+  return [...tags].sort();
 }
 
-function normalizeSink(attackPath: string[]): string {
-  const terminal = [...attackPath].reverse().find((part) => part.trim().length > 0) ?? 'unknown';
-  return terminal
+function normalizeSinkValue(value: string): string {
+  return value
     .trim()
     .replace(/\\/g, '/')
     .replace(/\b[A-Za-z]:?\/[^\s]+\//g, '')
     .toLowerCase()
     .replace(/[^a-z0-9._:-]+/g, '_')
     .replace(/^_+|_+$/g, '');
+}
+
+function firstSinkMatch(
+  values: string[],
+  pattern: RegExp,
+  rejectGenericDescriptions = false
+): string | undefined {
+  for (const value of values) {
+    if (
+      httpMethodPattern.test(value) ||
+      (rejectGenericDescriptions && genericSinkDescriptionPattern.test(value))
+    ) {
+      continue;
+    }
+    pattern.lastIndex = 0;
+    const match = pattern.exec(value);
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
+function normalizeSink(attackPath: string[], evidence: string): string {
+  const attackTokens = attackPath.map((part) => part.trim()).filter(Boolean);
+  const evidenceTokens = [evidence];
+  const sink =
+    firstSinkMatch(attackTokens, qualifiedSinkPattern) ??
+    firstSinkMatch(evidenceTokens, qualifiedSinkPattern) ??
+    firstSinkMatch(attackTokens, commandSinkPattern) ??
+    firstSinkMatch(evidenceTokens, commandSinkPattern) ??
+    firstSinkMatch(attackTokens, namedSinkPattern, true) ??
+    firstSinkMatch(evidenceTokens, namedSinkPattern, true);
+  return sink ? normalizeSinkValue(sink) : 'unknown';
+}
+
+function evidenceControlTags(evidence: string): string[] {
+  const tags = new Set<string>();
+  const normalized = evidence.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toUpperCase();
+  for (const token of normalized.split(/[^A-Z0-9]+/)) {
+    for (const tag of controlTokens[token] ?? []) tags.add(tag);
+  }
+  if (/\b(?:ORGANIZATION|OWNER|OWNERSHIP|TENANT)(?:\s+ID)?\b/.test(normalized)) {
+    tags.add('tenant_isolation');
+  }
+  if (/\bWEBHOOK\b.*\bSIGNATURE\b|\bSIGNATURE\b.*\bWEBHOOK\b/.test(normalized)) {
+    tags.add('webhook_integrity');
+  }
+  return [...tags].sort();
 }
 
 function evidenceTagsFor(evidence: string): string[] {
@@ -152,14 +213,18 @@ function evidenceTagsFor(evidence: string): string[] {
 
 export function findingIdentityTraits(finding: Finding): FindingIdentityTraits {
   const { method, route } = routeParts(finding);
+  const controlTags = new Set([
+    ...controlTagsFor(finding.ruleId),
+    ...evidenceControlTags(finding.evidence)
+  ]);
   return {
     ruleId: normalizeRuleId(finding.ruleId),
     method,
     route,
     routeTokens: route.split('/').filter(Boolean),
     framework: inferFramework(finding.affectedFiles),
-    sink: normalizeSink(finding.attackPath),
-    controlTags: controlTagsFor(finding.ruleId),
+    sink: normalizeSink(finding.attackPath, finding.evidence),
+    controlTags: [...controlTags].sort(),
     fileRole: normalizedFileRole(finding.affectedFiles),
     evidenceTags: evidenceTagsFor(finding.evidence)
   };
