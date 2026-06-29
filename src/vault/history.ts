@@ -20,6 +20,22 @@ function sortByTimestampThenId<T extends { id: string }>(items: T[], getTimestam
   );
 }
 
+function validatedFindingEvents(findings: VaultFindingEvent[]): VaultFindingEvent[] {
+  const sortedFindings = sortByTimestampThenId(findings, (event) => event.observedAt);
+  const eventByRunFingerprint = new Map<string, VaultFindingEvent>();
+  for (const finding of sortedFindings) {
+    const key = `${finding.runId}\0${finding.fingerprint}`;
+    const existing = eventByRunFingerprint.get(key);
+    if (existing) {
+      throw new Error(
+        `Duplicate Vault finding events for run ${JSON.stringify(finding.runId)} and fingerprint ${JSON.stringify(finding.fingerprint)}: ${existing.id}, ${finding.id}`
+      );
+    }
+    eventByRunFingerprint.set(key, finding);
+  }
+  return sortedFindings;
+}
+
 function timelineEventId(runId: string, fingerprint: string, lifecycle: VaultLifecycle, sourceId: string): string {
   return lifecycle === 'not_observed'
     ? `timeline:${runId}:${fingerprint}:${lifecycle}`
@@ -50,7 +66,7 @@ function buildTimelineEvent(
 export function projectLifecycle(history: VaultHistory): VaultTimelineEvent[] {
   const runs = sortByTimestampThenId(history.runs, (run) => run.startedAt);
   const findingsByRun = new Map<string, VaultFindingEvent[]>();
-  for (const finding of sortByTimestampThenId(history.findings, (event) => event.observedAt)) {
+  for (const finding of validatedFindingEvents(history.findings)) {
     const entries = findingsByRun.get(finding.runId);
     if (entries) {
       entries.push(finding);

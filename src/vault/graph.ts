@@ -17,6 +17,7 @@ import {
   vaultNodeSchema,
   type VaultEdge,
   type VaultEdgeType,
+  type VaultFindingEvent,
   type VaultGraph,
   type VaultHistory,
   type VaultNode,
@@ -170,8 +171,75 @@ function sortedMetadata(metadata: Record<string, string>, workspace: string): Re
   );
 }
 
+function projectedLifecycleInput(finding: Finding): VaultFindingEvent['lifecycleInput'] {
+  return finding.status === 'fixed' ||
+    finding.fixStatus === 'verified_fixed' ||
+    finding.patchStatus === 'verified_fixed'
+    ? 'verified_fixed'
+    : 'observed';
+}
+
+function projectedVerificationStatus(
+  finding: Finding
+): VaultFindingEvent['verificationStatus'] {
+  return projectedLifecycleInput(finding) === 'verified_fixed'
+    ? 'verified_fixed'
+    : finding.verificationStatus;
+}
+
+function findingProjectionOrder(left: Finding, right: Finding): number {
+  return (
+    left.id.localeCompare(right.id) ||
+    left.title.localeCompare(right.title) ||
+    left.ruleId.localeCompare(right.ruleId) ||
+    left.evidence.localeCompare(right.evidence)
+  );
+}
+
+function overlayDetachedCurrentFindings(input: BuildVaultGraphInput): VaultHistory {
+  const currentRun = input.history.runs.find((run) => run.id === input.currentRunId);
+  const observedAt = currentRun?.completedAt ?? generatedAt(input);
+  const currentEvents = input.history.findings.filter(
+    (event) => event.runId === input.currentRunId
+  );
+  const currentFingerprints = new Set(currentEvents.map((event) => event.fingerprint));
+  const currentFindingIds = new Set(currentEvents.map((event) => event.finding.id));
+  const detachedByFingerprint = new Map<string, Finding>();
+  for (const finding of [...input.findings].sort(findingProjectionOrder)) {
+    const fingerprint = findingFingerprint(finding);
+    if (
+      currentFingerprints.has(fingerprint) ||
+      currentFindingIds.has(finding.id) ||
+      detachedByFingerprint.has(fingerprint)
+    ) {
+      continue;
+    }
+    detachedByFingerprint.set(fingerprint, finding);
+  }
+  if (detachedByFingerprint.size === 0) return input.history;
+
+  const projectedFindings = [...input.history.findings];
+  for (const [fingerprint, finding] of detachedByFingerprint) {
+    projectedFindings.push({
+      id: `${input.currentRunId}:${fingerprint}`,
+      runId: input.currentRunId,
+      fingerprint,
+      lifecycleInput: projectedLifecycleInput(finding),
+      ruleId: finding.ruleId,
+      finding,
+      verificationStatus: projectedVerificationStatus(finding),
+      observedAt
+    });
+  }
+  return {
+    ...input.history,
+    findings: projectedFindings
+  };
+}
+
 export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   const workspace = input.systemMap.workspace;
+  const lifecycleHistory = overlayDetachedCurrentFindings(input);
   const nodesById = new Map<string, VaultNode>();
   const edgesById = new Map<string, VaultEdge>();
 
@@ -250,7 +318,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
     });
   };
 
-  const timeline = projectLifecycle(input.history).map((event) => ({
+  const timeline = projectLifecycle(lifecycleHistory).map((event) => ({
     ...event,
     title: safeText(event.title, workspace),
     evidence: event.evidence ? safeText(event.evidence, workspace) : undefined,
@@ -315,7 +383,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
 
   const occurrences: FindingOccurrence[] = [];
   const occurrenceByEventId = new Map<string, FindingOccurrence>();
-  for (const event of [...input.history.findings].sort(
+  for (const event of [...lifecycleHistory.findings].sort(
     (left, right) =>
       left.observedAt.localeCompare(right.observedAt) || left.id.localeCompare(right.id)
   )) {
@@ -362,7 +430,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
       id: occurrence.nodeId,
       type: 'finding',
       label: finding.title,
-      status: classifyObservedLifecycle(input.history, fingerprint),
+      status: classifyObservedLifecycle(lifecycleHistory, fingerprint),
       severity: finding.severity,
       runId: input.currentRunId,
       route: finding.affectedRoutes[0],
@@ -726,7 +794,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   }
 
   const eventForTimeline = new Map<string, VaultHistory['findings'][number]>(
-    input.history.findings.map((event) => [`timeline:${event.id}`, event] as const)
+    lifecycleHistory.findings.map((event) => [`timeline:${event.id}`, event] as const)
   );
   const lastOccurrenceByFingerprint = new Map<string, FindingOccurrence>();
   const fixedOccurrenceByFingerprint = new Map<string, FindingOccurrence>();

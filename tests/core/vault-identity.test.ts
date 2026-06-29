@@ -453,7 +453,8 @@ describe('Vault graph contracts', () => {
           to: 'run:1',
           type: 'observed_in',
           label: 'observed in',
-          evidence: 'Recorded in run 1'
+          evidence: 'Recorded in run 1',
+          artifactPaths: ['app/api/invoices/[id]/route.ts']
         }
       ],
       timeline: [
@@ -478,7 +479,9 @@ describe('Vault graph contracts', () => {
     });
 
     expect(parsed.nodes[0]?.metadata).toEqual({});
-    expect(parsed.edges[0]?.artifactPaths).toEqual([]);
+    expect(parsed.edges[0]?.artifactPaths).toEqual([
+      'app/api/invoices/[id]/route.ts'
+    ]);
     expect(parsed.timeline[0]?.artifactPaths).toEqual([]);
   });
 
@@ -496,7 +499,8 @@ describe('Vault graph contracts', () => {
           to: 'run:1',
           type: 'observed_in',
           label: 'observed in',
-          evidence: 'Recorded in run 1'
+          evidence: 'Recorded in run 1',
+          artifactPaths: ['app/api/invoices/[id]/route.ts']
         },
         {
           id: 'finding-similar',
@@ -505,6 +509,10 @@ describe('Vault graph contracts', () => {
           type: 'similar_to',
           label: 'similar to',
           evidence: 'Shares the same route and sink signals',
+          artifactPaths: [
+            'app/api/invoices/[id]/route.ts',
+            'app/api/orders/[id]/route.ts'
+          ],
           score: 0.83,
           signals: ['same_rule', 'same_sink']
         }
@@ -532,6 +540,7 @@ describe('Vault graph contracts', () => {
         type: 'similar_to',
         label: 'similar to',
         evidence: 'Incomplete similar edge',
+        artifactPaths: ['app/api/invoices/[id]/route.ts'],
         signals: ['same_rule']
       })
     ).toThrow();
@@ -543,6 +552,7 @@ describe('Vault graph contracts', () => {
         type: 'similar_to',
         label: 'similar to',
         evidence: 'Incomplete similar edge',
+        artifactPaths: ['app/api/invoices/[id]/route.ts'],
         score: 0.5,
         signals: []
       })

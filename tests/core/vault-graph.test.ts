@@ -183,28 +183,42 @@ describe('Vault graph projection', () => {
     ]);
   });
 
-  test('classifies detached current findings from fingerprint history instead of defaulting them to new', () => {
+  test('projects detached current findings through the shared lifecycle timeline', () => {
     const reopenedInput = makeGraphInput();
     const currentFingerprint = findingFingerprint(reopenedInput.findings[0]!);
     reopenedInput.history.findings = reopenedInput.history.findings.map((event) => ({
       ...event,
-      fingerprint: currentFingerprint
+      fingerprint:
+        event.fingerprint === 'invoice-fingerprint'
+          ? currentFingerprint
+          : event.fingerprint
     }));
     reopenedInput.history.findings = reopenedInput.history.findings.filter(
       (event) => event.runId !== reopenedInput.currentRunId
     );
 
     const reopenedGraph = buildVaultGraph(reopenedInput);
-    expect(
-      reopenedGraph.nodes.find(
-        (node) => node.id === `finding:day-5:${currentFingerprint}`
-      )?.status
-    ).toBe('reopened');
+    const reopenedNode = reopenedGraph.nodes.find(
+      (node) => node.id === `finding:day-5:${currentFingerprint}`
+    );
+    const reopenedTimeline = reopenedGraph.timeline.filter(
+      (event) => event.findingFingerprint === currentFingerprint
+    );
+    const reopenedEdge = reopenedGraph.edges.find((edge) => edge.type === 'reopened_from');
+
+    expect(reopenedNode?.status).toBe('reopened');
+    expect(reopenedTimeline.at(-1)?.lifecycle).toBe('reopened');
+    expect(reopenedGraph.summary.reopenedIssues).toBe(1);
+    expect(reopenedEdge?.from).toBe(`finding:day-5:${currentFingerprint}`);
+    expect(reopenedEdge?.artifactPaths).toEqual(['app/api/invoices/[id]/route.ts']);
 
     const repeatedInput = makeGraphInput();
     repeatedInput.history.findings = repeatedInput.history.findings.map((event) => ({
       ...event,
-      fingerprint: currentFingerprint
+      fingerprint:
+        event.fingerprint === 'invoice-fingerprint'
+          ? currentFingerprint
+          : event.fingerprint
     }));
     repeatedInput.history.findings = repeatedInput.history.findings.filter(
       (event) =>
@@ -215,11 +229,18 @@ describe('Vault graph projection', () => {
     repeatedInput.history.replays = [];
 
     const repeatedGraph = buildVaultGraph(repeatedInput);
-    expect(
-      repeatedGraph.nodes.find(
-        (node) => node.id === `finding:day-5:${currentFingerprint}`
-      )?.status
-    ).toBe('repeated');
+    const repeatedNode = repeatedGraph.nodes.find(
+      (node) => node.id === `finding:day-5:${currentFingerprint}`
+    );
+    const repeatedTimeline = repeatedGraph.timeline.filter(
+      (event) => event.findingFingerprint === currentFingerprint
+    );
+    const repeatedEdge = repeatedGraph.edges.find((edge) => edge.type === 'repeated_from');
+
+    expect(repeatedNode?.status).toBe('repeated');
+    expect(repeatedTimeline.at(-1)?.lifecycle).toBe('repeated');
+    expect(repeatedGraph.summary.repeatedIssues).toBe(2);
+    expect(repeatedEdge?.from).toBe(`finding:day-5:${currentFingerprint}`);
   });
 
   test('does not fabricate regression test artifacts from evidence directories alone', () => {

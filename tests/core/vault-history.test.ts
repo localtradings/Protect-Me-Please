@@ -166,6 +166,48 @@ describe('Vault append-only history store', () => {
     }
   });
 
+  test('rejects duplicate finding fingerprints inside a single run with context', async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), 'bp-vault-history-'));
+    const db = initializeStateStore(workspace);
+    try {
+      appendVaultSnapshot(db, makeSnapshot('day-1', 'observed'));
+      appendVaultSnapshot(db, makeSnapshot('day-2-fixed', 'verified_fixed'));
+      appendVaultSnapshot(db, makeSnapshot('day-5', 'observed'));
+
+      db.prepare(
+        `
+          INSERT INTO vault_finding_events (
+            id,
+            run_id,
+            fingerprint,
+            lifecycle_input,
+            rule_id,
+            finding_json,
+            verification_status,
+            observed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(
+        'finding-day-5-duplicate',
+        'day-5',
+        'invoice-fingerprint',
+        'observed',
+        'BP-BOLA-002',
+        JSON.stringify(makeSnapshot('day-5', 'observed').findings[0]!.finding),
+        'not_run',
+        '2026-06-05T10:00:30.000Z'
+      );
+
+      const history = readVaultHistory(db);
+      expect(() => projectLifecycle(history)).toThrow(
+        /duplicate vault finding events.*run "day-5".*fingerprint "invoice-fingerprint".*finding-day-5-duplicate/i
+      );
+    } finally {
+      db.close();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   test('throws contextual errors for corrupt JSON without mutating stored rows', async () => {
     const workspace = await mkdtemp(path.join(tmpdir(), 'bp-vault-history-'));
     const db = initializeStateStore(workspace);
