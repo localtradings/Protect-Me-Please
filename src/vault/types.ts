@@ -68,7 +68,7 @@ const vaultEdgeBaseSchema = z
     to: z.string().min(1),
     label: z.string().min(1),
     evidence: z.string().min(1),
-    artifactPaths: z.array(z.string().min(1)).default([])
+    artifactPaths: z.array(z.string().min(1)).nonempty()
   })
   .strict();
 

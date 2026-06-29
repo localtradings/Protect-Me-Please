@@ -131,6 +131,52 @@ describe('Vault graph projection', () => {
     expect(graph.edges.filter((edge) => edge.type === 'fixed_by')).toHaveLength(0);
     expect(graph.edges.filter((edge) => edge.type === 'verified_by')).toHaveLength(0);
   });
+
+  test('skips replay and patch claim edges when optional source artifacts are missing', () => {
+    const input = makeGraphInput();
+    input.history.replays = input.history.replays.map((replay) => ({
+      ...replay,
+      artifactPath: undefined
+    }));
+    input.history.patches = input.history.patches.map((patch) => ({
+      ...patch,
+      patchFile: undefined,
+      testFile: undefined
+    }));
+    input.patchSummary.items = input.patchSummary.items.map((item) => ({
+      ...item,
+      patchFile: undefined,
+      testFile: undefined
+    }));
+
+    const graph = buildVaultGraph(input);
+    const replayEdge = graph.edges.find(
+      (edge) => edge.type === 'proved_by' && edge.to === 'replay:replay-day-2-fixed'
+    );
+    const historicalPatchEdge = graph.edges.find(
+      (edge) => edge.type === 'fixed_by' && edge.to === 'patch:patch-day-2-fixed'
+    );
+    const summaryPatchEdge = graph.edges.find(
+      (edge) =>
+        edge.type === 'fixed_by' &&
+        edge.to === 'patch:summary:day-5:invoice-fingerprint:verified_fixed'
+    );
+    const summaryReplayVerificationEdge = graph.edges.find(
+      (edge) =>
+        edge.type === 'verified_by' &&
+        edge.from === 'patch:summary:day-5:invoice-fingerprint:verified_fixed' &&
+        edge.to === 'replay:evidence:day-5:invoice-fingerprint'
+    );
+
+    expect(graph.edges.every((edge) => edge.artifactPaths.length > 0)).toBe(true);
+    expect(vaultGraphSchema.parse(graph)).toEqual(graph);
+    expect(replayEdge).toBeUndefined();
+    expect(historicalPatchEdge).toBeUndefined();
+    expect(summaryPatchEdge).toBeUndefined();
+    expect(summaryReplayVerificationEdge?.artifactPaths).toEqual([
+      'reports/evidence/generated-id'
+    ]);
+  });
 });
 
 describe('Vault patch memory', () => {

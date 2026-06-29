@@ -208,6 +208,8 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   }): void => {
     const id = `edge:${candidate.type}:${candidate.from}:${candidate.to}`;
     const artifactPaths = sortedUnique(candidate.artifactPaths ?? [], workspace);
+    // Task 4 requires every emitted edge to carry real source artifacts.
+    if (artifactPaths.length === 0) return;
     const evidence = safeText(candidate.evidence, workspace).trim();
     const edge = vaultEdgeSchema.parse({
       id,
