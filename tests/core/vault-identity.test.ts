@@ -8,6 +8,7 @@ import {
 import { compareFindingSimilarity, findSimilarFindings } from '../../src/vault/similarity.js';
 import {
   vaultEdgeTypeSchema,
+  vaultEdgeSchema,
   vaultFindingEventSchema,
   vaultGraphSchema,
   vaultHistorySchema,
@@ -104,6 +105,48 @@ describe('Vault identities', () => {
     expect(findingFingerprint(deleteUser)).not.toBe(findingFingerprint(disableUser));
   });
 
+  test('keeps fingerprints stable when affectedRoutes are permuted', () => {
+    const original = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]', 'POST /api/orders/[id]'],
+      attackPath: ['GET /api/invoices/[id]', 'Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+    const permuted = makeFinding({
+      affectedRoutes: ['POST /api/orders/[id]', 'GET /api/invoices/[id]'],
+      attackPath: ['GET /api/invoices/[id]', 'Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+    const materiallyDifferentRoute = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]', 'GET /api/payments/[id]'],
+      attackPath: ['GET /api/invoices/[id]', 'Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+
+    expect(findingFingerprint(original)).toBe(findingFingerprint(permuted));
+    expect(findingFingerprint(original)).not.toBe(findingFingerprint(materiallyDifferentRoute));
+  });
+
+  test('keeps fingerprints stable when attackPath sink candidates are permuted', () => {
+    const original = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Invoice.findUnique', 'Order.findUnique'],
+      evidence: 'Prisma Invoice.findUnique and Order.findUnique lack tenantId.'
+    });
+    const permuted = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Order.findUnique', 'Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique and Order.findUnique lack tenantId.'
+    });
+    const materiallyDifferentSink = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Invoice.findUnique', 'User.findUnique'],
+      evidence: 'Prisma Invoice.findUnique and User.findUnique lack tenantId.'
+    });
+
+    expect(findingFingerprint(original)).toBe(findingFingerprint(permuted));
+    expect(findingFingerprint(original)).not.toBe(findingFingerprint(materiallyDifferentSink));
+  });
+
   test('normalizes route parameters while retaining the HTTP method', () => {
     const numeric = routeFingerprint('get', '/api/invoices/123');
 
@@ -115,12 +158,15 @@ describe('Vault identities', () => {
   test('changes identity when framework or file role changes', () => {
     const nextRoute = makeFinding();
     const expressRoute = makeFinding({ affectedFiles: ['src/routes/invoices.ts'] });
+    const testRoute = makeFinding({ affectedFiles: ['src/routes/foo.test.ts'] });
     const sourceFile = makeFinding({ affectedFiles: ['lib/invoices.ts'] });
 
     expect(findingIdentityTraits(nextRoute)).toMatchObject({ framework: 'nextjs', fileRole: 'api_route' });
     expect(findingIdentityTraits(expressRoute)).toMatchObject({ framework: 'express', fileRole: 'route_handler' });
+    expect(findingIdentityTraits(testRoute)).toMatchObject({ framework: 'express', fileRole: 'test' });
     expect(findingIdentityTraits(sourceFile)).toMatchObject({ framework: 'unknown', fileRole: 'source_file' });
-    expect(new Set([nextRoute, expressRoute, sourceFile].map(findingFingerprint))).toHaveLength(3);
+    expect(findingFingerprint(testRoute)).not.toBe(findingFingerprint(expressRoute));
+    expect(new Set([nextRoute, expressRoute, testRoute, sourceFile].map(findingFingerprint))).toHaveLength(4);
   });
 
   test('derives composite control families from all known rule and evidence tokens', () => {
@@ -391,6 +437,73 @@ describe('Vault graph contracts', () => {
     expect(parsed.nodes[0]?.metadata).toEqual({});
     expect(parsed.edges[0]?.artifactPaths).toEqual([]);
     expect(parsed.timeline[0]?.artifactPaths).toEqual([]);
+  });
+
+  test('requires score and signals for similar_to edges while preserving defaults for other edges', () => {
+    const graph = vaultGraphSchema.parse({
+      schemaVersion: 1,
+      generatedAt: '2026-06-28T00:00:00.000Z',
+      project: 'breachproof',
+      currentRunId: 'run-1',
+      nodes: [],
+      edges: [
+        {
+          id: 'finding-run',
+          from: 'finding:invoice',
+          to: 'run:1',
+          type: 'observed_in',
+          label: 'observed in',
+          evidence: 'Recorded in run 1'
+        },
+        {
+          id: 'finding-similar',
+          from: 'finding:invoice',
+          to: 'finding:orders',
+          type: 'similar_to',
+          label: 'similar to',
+          evidence: 'Shares the same route and sink signals',
+          score: 0.83,
+          signals: ['same_rule', 'same_sink']
+        }
+      ],
+      timeline: [],
+      summary: {
+        nodes: 0,
+        edges: 2,
+        newIssues: 0,
+        fixedIssues: 0,
+        reopenedIssues: 0,
+        repeatedIssues: 0
+      }
+    });
+
+    expect(graph.edges[0]?.signals).toEqual([]);
+    expect(graph.edges[0]?.score).toBeUndefined();
+    expect(graph.edges[1]?.score).toBe(0.83);
+    expect(graph.edges[1]?.signals).toEqual(['same_rule', 'same_sink']);
+    expect(() =>
+      vaultEdgeSchema.parse({
+        id: 'missing-score',
+        from: 'finding:invoice',
+        to: 'finding:orders',
+        type: 'similar_to',
+        label: 'similar to',
+        evidence: 'Incomplete similar edge',
+        signals: ['same_rule']
+      })
+    ).toThrow();
+    expect(() =>
+      vaultEdgeSchema.parse({
+        id: 'missing-signals',
+        from: 'finding:invoice',
+        to: 'finding:orders',
+        type: 'similar_to',
+        label: 'similar to',
+        evidence: 'Incomplete similar edge',
+        score: 0.5,
+        signals: []
+      })
+    ).toThrow();
   });
 
   test('parses every stored event, snapshot, history, and patch-memory schema', () => {

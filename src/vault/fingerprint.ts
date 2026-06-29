@@ -47,9 +47,11 @@ export interface FindingIdentityTraits {
   ruleId: string;
   method: string;
   route: string;
+  routes: string[];
   routeTokens: string[];
   framework: string;
   sink: string;
+  sinks: string[];
   controlTags: string[];
   fileRole: string;
   evidenceTags: string[];
@@ -71,20 +73,55 @@ export function normalizeRoutePath(route: string): string {
   return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }
 
-function routeParts(finding: Finding): { method: string; route: string } {
-  const candidates = [...finding.affectedRoutes, ...finding.attackPath];
+function collectRouteLabels(candidates: string[]): string[] {
+  const routes = new Map<string, Set<string>>();
   for (const candidate of candidates) {
-    const match = candidate.match(httpMethodPattern);
+    const trimmed = candidate.trim();
+    const match = trimmed.match(httpMethodPattern);
     if (match) {
-      return {
-        method: (match[1] ?? 'UNKNOWN').toUpperCase(),
-        route: normalizeRoutePath(match[2] ?? '/')
-      };
+      const route = normalizeRoutePath(match[2] ?? '/');
+      const method = (match[1] ?? 'UNKNOWN').toUpperCase();
+      const methods = routes.get(route) ?? new Set<string>();
+      methods.add(method);
+      routes.set(route, methods);
+      continue;
     }
+
+    if (!trimmed.startsWith('/')) continue;
+    const route = normalizeRoutePath(trimmed);
+    const methods = routes.get(route) ?? new Set<string>();
+    methods.add('UNKNOWN');
+    routes.set(route, methods);
   }
 
-  const route = finding.affectedRoutes.find((candidate) => candidate.trim().startsWith('/'));
-  return { method: 'UNKNOWN', route: normalizeRoutePath(route ?? '/') };
+  return [...routes.entries()]
+    .sort(([leftRoute], [rightRoute]) => leftRoute.localeCompare(rightRoute))
+    .flatMap(([route, methods]) => {
+      const knownMethods = [...methods].filter((method) => method !== 'UNKNOWN').sort();
+      return knownMethods.length > 0 ? knownMethods.map((method) => `${method} ${route}`) : [`UNKNOWN ${route}`];
+    });
+}
+
+function routeParts(finding: Finding): {
+  method: string;
+  route: string;
+  routes: string[];
+  routeTokens: string[];
+} {
+  const routes = collectRouteLabels([...finding.affectedRoutes, ...finding.attackPath]);
+  const [primaryRoute = 'UNKNOWN /'] = routes;
+  const [method = 'UNKNOWN', ...routeSegments] = primaryRoute.split(' ');
+  const route = routeSegments.join(' ') || '/';
+  const routeTokens = [
+    ...new Set(
+      routes.flatMap((label) => {
+        const path = label.includes(' ') ? label.slice(label.indexOf(' ') + 1) : label;
+        return path.split('/').filter(Boolean);
+      })
+    )
+  ].sort();
+
+  return { method, route, routes, routeTokens };
 }
 
 function normalizedFile(file: string): string {
@@ -115,10 +152,10 @@ function inferFramework(files: string[]): string {
 function fileRoleFor(file: string): string {
   const normalized = normalizedFile(file).toLowerCase();
   if (nextRouteFilePattern.test(normalized)) return 'api_route';
+  if (/(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(normalized)) return 'test';
   if (/(?:^|\/)(?:routes?|routers?)(?:\/|\.|$)/.test(normalized)) return 'route_handler';
   if (/(?:^|\/)(?:server|app|index)\.[cm]?[jt]sx?$/.test(normalized)) return 'server_entry';
   if (/(?:^|\/)(?:middleware|guard|auth)(?:\/|\.|$)/.test(normalized)) return 'security_middleware';
-  if (/(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(normalized)) return 'test';
   if (/schema\.prisma$|(?:^|\/)(?:models?|schemas?)(?:\/|\.|$)/.test(normalized)) return 'data_model';
   if (/\.github\/workflows\//.test(normalized)) return 'ci_workflow';
   return 'source_file';
@@ -151,11 +188,8 @@ function normalizeSinkValue(value: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
-function firstSinkMatch(
-  values: string[],
-  pattern: RegExp,
-  rejectGenericDescriptions = false
-): string | undefined {
+function collectSinkLabels(values: string[], pattern: RegExp, rejectGenericDescriptions = false): string[] {
+  const sinks = new Set<string>();
   for (const value of values) {
     if (
       httpMethodPattern.test(value) ||
@@ -164,23 +198,25 @@ function firstSinkMatch(
       continue;
     }
     pattern.lastIndex = 0;
-    const match = pattern.exec(value);
-    if (match?.[1]) return match[1];
+    for (let match = pattern.exec(value); match !== null; match = pattern.exec(value)) {
+      if (match[1]) sinks.add(normalizeSinkValue(match[1]));
+    }
   }
-  return undefined;
+  return [...sinks].sort();
 }
 
-function normalizeSink(attackPath: string[], evidence: string): string {
+function collectSinkLabelsForFinding(attackPath: string[], evidence: string): string[] {
   const attackTokens = attackPath.map((part) => part.trim()).filter(Boolean);
   const evidenceTokens = [evidence];
-  const sink =
-    firstSinkMatch(attackTokens, qualifiedSinkPattern) ??
-    firstSinkMatch(evidenceTokens, qualifiedSinkPattern) ??
-    firstSinkMatch(attackTokens, commandSinkPattern) ??
-    firstSinkMatch(evidenceTokens, commandSinkPattern) ??
-    firstSinkMatch(attackTokens, namedSinkPattern, true) ??
-    firstSinkMatch(evidenceTokens, namedSinkPattern, true);
-  return sink ? normalizeSinkValue(sink) : 'unknown';
+  const prioritizedMatches = [
+    collectSinkLabels(attackTokens, qualifiedSinkPattern),
+    collectSinkLabels(evidenceTokens, qualifiedSinkPattern),
+    collectSinkLabels(attackTokens, commandSinkPattern),
+    collectSinkLabels(evidenceTokens, commandSinkPattern),
+    collectSinkLabels(attackTokens, namedSinkPattern, true),
+    collectSinkLabels(evidenceTokens, namedSinkPattern, true)
+  ];
+  return prioritizedMatches.find((sinks) => sinks.length > 0) ?? [];
 }
 
 function evidenceControlTags(evidence: string): string[] {
@@ -212,7 +248,8 @@ function evidenceTagsFor(evidence: string): string[] {
 }
 
 export function findingIdentityTraits(finding: Finding): FindingIdentityTraits {
-  const { method, route } = routeParts(finding);
+  const { method, route, routes, routeTokens } = routeParts(finding);
+  const sinks = collectSinkLabelsForFinding(finding.attackPath, finding.evidence);
   const controlTags = new Set([
     ...controlTagsFor(finding.ruleId),
     ...evidenceControlTags(finding.evidence)
@@ -221,9 +258,11 @@ export function findingIdentityTraits(finding: Finding): FindingIdentityTraits {
     ruleId: normalizeRuleId(finding.ruleId),
     method,
     route,
-    routeTokens: route.split('/').filter(Boolean),
+    routes,
+    routeTokens,
     framework: inferFramework(finding.affectedFiles),
-    sink: normalizeSink(finding.attackPath, finding.evidence),
+    sink: sinks[0] ?? 'unknown',
+    sinks,
     controlTags: [...controlTags].sort(),
     fileRole: normalizedFileRole(finding.affectedFiles),
     evidenceTags: evidenceTagsFor(finding.evidence)
@@ -241,8 +280,10 @@ export function findingFingerprint(finding: Finding): string {
       ruleId: traits.ruleId,
       method: traits.method,
       route: traits.route,
+      routes: traits.routes,
       framework: traits.framework,
       sink: traits.sink,
+      sinks: traits.sinks,
       controlTags: traits.controlTags,
       fileRole: traits.fileRole
     })

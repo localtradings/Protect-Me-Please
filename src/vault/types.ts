@@ -61,18 +61,50 @@ export const vaultNodeSchema = z
   .strict();
 export type VaultNode = z.infer<typeof vaultNodeSchema>;
 
-export const vaultEdgeSchema = z
+const vaultEdgeBaseSchema = z
   .object({
     id: z.string().min(1),
     from: z.string().min(1),
     to: z.string().min(1),
-    type: vaultEdgeTypeSchema,
     label: z.string().min(1),
     evidence: z.string().min(1),
-    score: z.number().min(0).max(1).optional(),
     artifactPaths: z.array(z.string().min(1)).default([])
   })
   .strict();
+
+const vaultNonSimilarEdgeTypeSchema = z.enum([
+  'observed_in',
+  'affects',
+  'violates',
+  'reaches',
+  'proved_by',
+  'fixed_by',
+  'verified_by',
+  'reopened_from',
+  'repeated_from',
+  'protects'
+]);
+
+const vaultNonSimilarEdgeSchema = vaultEdgeBaseSchema
+  .extend({
+    type: vaultNonSimilarEdgeTypeSchema,
+    score: z.number().min(0).max(1).optional(),
+    signals: z.array(z.string().min(1)).default([])
+  })
+  .strict();
+
+const vaultSimilarEdgeSchema = vaultEdgeBaseSchema
+  .extend({
+    type: z.literal('similar_to'),
+    score: z.number().min(0).max(1),
+    signals: z.array(z.string().min(1)).nonempty()
+  })
+  .strict();
+
+export const vaultEdgeSchema = z.discriminatedUnion('type', [
+  vaultSimilarEdgeSchema,
+  vaultNonSimilarEdgeSchema
+]);
 export type VaultEdge = z.infer<typeof vaultEdgeSchema>;
 
 export const vaultTimelineEventSchema = z
