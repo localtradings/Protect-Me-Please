@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import { buildVaultGraph } from '../../src/vault/graph.js';
+import { findingFingerprint } from '../../src/vault/fingerprint.js';
 import { buildPatchMemory } from '../../src/vault/history.js';
 import { vaultGraphSchema } from '../../src/vault/types.js';
-import { makeGraphInput, makePatchHistory } from '../helpers/vault-fixtures.js';
+import {
+  makeGraphInput,
+  makePatchHistory,
+  makeSnapshot
+} from '../helpers/vault-fixtures.js';
 
 const nodeTypes = ['asset', 'finding', 'invariant', 'patch', 'replay', 'route', 'run', 'test'];
 const edgeTypes = [
@@ -177,6 +182,71 @@ describe('Vault graph projection', () => {
       'reports/evidence/generated-id'
     ]);
   });
+
+  test('classifies detached current findings from fingerprint history instead of defaulting them to new', () => {
+    const reopenedInput = makeGraphInput();
+    const currentFingerprint = findingFingerprint(reopenedInput.findings[0]!);
+    reopenedInput.history.findings = reopenedInput.history.findings.map((event) => ({
+      ...event,
+      fingerprint: currentFingerprint
+    }));
+    reopenedInput.history.findings = reopenedInput.history.findings.filter(
+      (event) => event.runId !== reopenedInput.currentRunId
+    );
+
+    const reopenedGraph = buildVaultGraph(reopenedInput);
+    expect(
+      reopenedGraph.nodes.find(
+        (node) => node.id === `finding:day-5:${currentFingerprint}`
+      )?.status
+    ).toBe('reopened');
+
+    const repeatedInput = makeGraphInput();
+    repeatedInput.history.findings = repeatedInput.history.findings.map((event) => ({
+      ...event,
+      fingerprint: currentFingerprint
+    }));
+    repeatedInput.history.findings = repeatedInput.history.findings.filter(
+      (event) =>
+        event.runId !== repeatedInput.currentRunId &&
+        event.lifecycleInput !== 'verified_fixed'
+    );
+    repeatedInput.history.patches = [];
+    repeatedInput.history.replays = [];
+
+    const repeatedGraph = buildVaultGraph(repeatedInput);
+    expect(
+      repeatedGraph.nodes.find(
+        (node) => node.id === `finding:day-5:${currentFingerprint}`
+      )?.status
+    ).toBe('repeated');
+  });
+
+  test('does not fabricate regression test artifacts from evidence directories alone', () => {
+    const input = makeGraphInput();
+    input.history.patches = input.history.patches.map((patch) => ({
+      ...patch,
+      testFile: undefined
+    }));
+    input.patchSummary.items = input.patchSummary.items.map((item) => ({
+      ...item,
+      testFile: undefined
+    }));
+
+    const graph = buildVaultGraph(input);
+
+    expect(graph.nodes.filter((node) => node.type === 'test')).toHaveLength(0);
+    expect(
+      graph.edges.some((edge) =>
+        edge.artifactPaths.includes('reports/evidence/generated-id/regression.test.ts')
+      )
+    ).toBe(false);
+    expect(
+      graph.edges.some(
+        (edge) => edge.type === 'protects' && edge.from.startsWith('test:')
+      )
+    ).toBe(false);
+  });
 });
 
 describe('Vault patch memory', () => {
@@ -222,6 +292,40 @@ describe('Vault patch memory', () => {
       'invoice-fingerprint'
     ]);
     expect(memory[0]?.outcome).toBe('verified_fixed');
+  });
+
+  test('keeps grouped verification metadata aligned with the reopened-count window', () => {
+    const history = makePatchHistory(['verified_fixed']);
+    const laterVerifiedRun = makeSnapshot('day-7-fixed', 'verified_fixed');
+    const laterVerifiedFinding = laterVerifiedRun.findings[0]!;
+
+    history.runs.push(laterVerifiedRun.run);
+    history.findings.push({
+      id: 'finding-day-7-fixed',
+      runId: laterVerifiedRun.run.id,
+      fingerprint: laterVerifiedFinding.fingerprint,
+      lifecycleInput: laterVerifiedFinding.lifecycleInput,
+      ruleId: laterVerifiedFinding.finding.ruleId,
+      finding: laterVerifiedFinding.finding,
+      verificationStatus: 'verified_fixed',
+      observedAt: laterVerifiedRun.run.completedAt
+    });
+    history.patches.push({
+      ...history.patches[0]!,
+      id: 'patch-memory-02',
+      runId: laterVerifiedRun.run.id,
+      verificationEvidence: 'Later verification evidence should not reset the reopened window.',
+      observedAt: laterVerifiedRun.run.completedAt
+    });
+
+    const memory = buildPatchMemory(history);
+
+    expect(memory).toHaveLength(1);
+    expect(memory[0]).toMatchObject({
+      verificationRunId: 'day-2-fixed',
+      verificationEvidence: 'Cross-tenant request denied after the tenant predicate was added.',
+      reopenedCount: 1
+    });
   });
 
   test('never promotes generated or recommended patch states to success', () => {

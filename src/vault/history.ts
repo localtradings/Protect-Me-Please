@@ -138,6 +138,17 @@ export function currentLifecycleByFingerprint(history: VaultHistory): Map<string
   return current;
 }
 
+export function classifyObservedLifecycle(
+  history: VaultHistory,
+  fingerprint: string
+): Extract<VaultLifecycle, 'new' | 'repeated' | 'reopened'> {
+  const events = projectLifecycle(history).filter(
+    (event) => event.findingFingerprint === fingerprint
+  );
+  if (events.length === 0) return 'new';
+  return events.some((event) => event.lifecycle === 'fixed') ? 'reopened' : 'repeated';
+}
+
 interface PatchMemoryGroup {
   memory: Omit<VaultPatchMemory, 'findingFingerprints' | 'reopenedCount'>;
   fingerprints: Set<string>;
@@ -193,7 +204,6 @@ export function buildPatchMemory(history: VaultHistory): VaultPatchMemory[] {
       outcome: 'verified_fixed' as const
     };
     if (existing) {
-      existing.memory = memory;
       existing.fingerprints.add(patch.findingFingerprint);
     } else {
       groups.set(key, {

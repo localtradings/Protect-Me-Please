@@ -9,7 +9,7 @@ import type {
 import type { EvidenceArtifactSummary } from '../proof/evidence.js';
 import type { InvariantResultsArtifact } from '../proof/invariants.js';
 import { findingFingerprint } from './fingerprint.js';
-import { projectLifecycle } from './history.js';
+import { classifyObservedLifecycle, projectLifecycle } from './history.js';
 import { findSimilarFindings } from './similarity.js';
 import {
   vaultEdgeSchema,
@@ -362,7 +362,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
       id: occurrence.nodeId,
       type: 'finding',
       label: finding.title,
-      status: 'new',
+      status: classifyObservedLifecycle(input.history, fingerprint),
       severity: finding.severity,
       runId: input.currentRunId,
       route: finding.affectedRoutes[0],
@@ -721,29 +721,6 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
         label: 'stored in',
         evidence: `Candidate ${candidate.candidate} is stored in the local tournament directory.`,
         artifactPaths: [candidate.file, tournament.directory]
-      });
-    }
-  }
-
-  for (const item of input.evidence.items) {
-    const testFile = `${safeRelativePath(item.directory, workspace)}/regression.test.ts`;
-    const testNode = addTest(testFile, input.currentRunId, item.status);
-    const occurrence =
-      occurrenceForFinding(occurrences, item.findingId, input.currentRunId) ??
-      occurrenceForFinding(occurrences, item.findingId);
-    if (!occurrence) continue;
-    for (const route of input.systemMap.routes.filter((candidate) =>
-      routeMatchesFinding(candidate, occurrence.finding)
-    )) {
-      const routeNode = routeNodes.get(route.id);
-      if (!routeNode) continue;
-      addEdge({
-        from: testNode.id,
-        to: routeNode.id,
-        type: 'protects',
-        label: 'protects',
-        evidence: `Replay regression artifact protects ${routeLabel(route.method, route.path)}.`,
-        artifactPaths: [testFile, route.file]
       });
     }
   }
