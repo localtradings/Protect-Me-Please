@@ -1,4 +1,12 @@
-import { vaultTimelineEventSchema, type VaultFindingEvent, type VaultHistory, type VaultLifecycle, type VaultTimelineEvent } from './types.js';
+import {
+  vaultPatchMemorySchema,
+  vaultTimelineEventSchema,
+  type VaultFindingEvent,
+  type VaultHistory,
+  type VaultLifecycle,
+  type VaultPatchMemory,
+  type VaultTimelineEvent
+} from './types.js';
 
 interface FingerprintState {
   everFixed: boolean;
@@ -22,7 +30,8 @@ function buildTimelineEvent(
   finding: VaultFindingEvent,
   lifecycle: VaultLifecycle,
   timestamp: string,
-  sourceId: string
+  sourceId: string,
+  relatedFingerprint?: string
 ): VaultTimelineEvent {
   return vaultTimelineEventSchema.parse({
     id: timelineEventId(finding.runId, finding.fingerprint, lifecycle, sourceId),
@@ -32,6 +41,7 @@ function buildTimelineEvent(
     timestamp,
     ruleId: finding.ruleId,
     title: finding.finding.title,
+    relatedFingerprint,
     evidence: finding.finding.evidence,
     artifactPaths: finding.finding.affectedFiles
   });
@@ -68,7 +78,17 @@ export function projectLifecycle(history: VaultHistory): VaultTimelineEvent[] {
             : existing
               ? 'repeated'
               : 'new';
-      timeline.push(buildTimelineEvent(finding, lifecycle, finding.observedAt, finding.id));
+      timeline.push(
+        buildTimelineEvent(
+          finding,
+          lifecycle,
+          finding.observedAt,
+          finding.id,
+          lifecycle === 'repeated' || lifecycle === 'reopened'
+            ? existing?.lastFinding.fingerprint
+            : undefined
+        )
+      );
       seen.set(finding.fingerprint, {
         everFixed: Boolean(existing?.everFixed || finding.lifecycleInput === 'verified_fixed'),
         lastFinding: finding,
@@ -116,4 +136,97 @@ export function currentLifecycleByFingerprint(history: VaultHistory): Map<string
     current.set(event.findingFingerprint, event.lifecycle);
   }
   return current;
+}
+
+interface PatchMemoryGroup {
+  memory: Omit<VaultPatchMemory, 'findingFingerprints' | 'reopenedCount'>;
+  fingerprints: Set<string>;
+  firstVerifiedAt: string;
+}
+
+function safeStoredArtifact(value: string): string {
+  const normalized = value.replace(/\\/g, '/');
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+    return normalized.split('/').filter(Boolean).at(-1) ?? 'regression.test.ts';
+  }
+  const segments = normalized
+    .split('/')
+    .filter((segment) => segment && segment !== '.' && segment !== '..');
+  return segments.join('/') || 'regression.test.ts';
+}
+
+function patchMemoryKey(patch: VaultHistory['patches'][number]): string {
+  return JSON.stringify([
+    patch.patternId,
+    patch.ruleId,
+    patch.framework,
+    patch.fileRole,
+    patch.strategy,
+    patch.changePattern
+  ]);
+}
+
+export function buildPatchMemory(history: VaultHistory): VaultPatchMemory[] {
+  const groups = new Map<string, PatchMemoryGroup>();
+  const verifiedPatches = sortByTimestampThenId(
+    history.patches.filter(
+      (patch) => patch.outcome === 'verified_fixed' && Boolean(patch.testFile)
+    ),
+    (patch) => patch.observedAt
+  );
+
+  for (const patch of verifiedPatches) {
+    const testFile = patch.testFile;
+    if (!testFile) continue;
+    const key = patchMemoryKey(patch);
+    const existing = groups.get(key);
+    const memory = {
+      patternId: patch.patternId,
+      ruleId: patch.ruleId,
+      framework: patch.framework,
+      fileRole: patch.fileRole,
+      strategy: patch.strategy,
+      changePattern: patch.changePattern,
+      regressionTestArtifact: safeStoredArtifact(testFile),
+      verificationRunId: patch.runId,
+      verificationEvidence: patch.verificationEvidence,
+      outcome: 'verified_fixed' as const
+    };
+    if (existing) {
+      existing.memory = memory;
+      existing.fingerprints.add(patch.findingFingerprint);
+    } else {
+      groups.set(key, {
+        memory,
+        fingerprints: new Set([patch.findingFingerprint]),
+        firstVerifiedAt: patch.observedAt
+      });
+    }
+  }
+
+  const lifecycle = projectLifecycle(history);
+  return [...groups.values()]
+    .map((group) => {
+      const findingFingerprints = [...group.fingerprints].sort();
+      const fingerprintSet = new Set(findingFingerprints);
+      return vaultPatchMemorySchema.parse({
+        ...group.memory,
+        findingFingerprints,
+        reopenedCount: lifecycle.filter(
+          (event) =>
+            event.lifecycle === 'reopened' &&
+            fingerprintSet.has(event.findingFingerprint) &&
+            event.timestamp > group.firstVerifiedAt
+        ).length
+      });
+    })
+    .sort(
+      (left, right) =>
+        left.patternId.localeCompare(right.patternId) ||
+        left.ruleId.localeCompare(right.ruleId) ||
+        left.framework.localeCompare(right.framework) ||
+        left.fileRole.localeCompare(right.fileRole) ||
+        left.strategy.localeCompare(right.strategy) ||
+        left.changePattern.localeCompare(right.changePattern)
+    );
 }
