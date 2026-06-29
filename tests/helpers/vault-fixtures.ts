@@ -1,4 +1,5 @@
 import type { Finding } from '../../src/core/types.js';
+import type { VaultRunSnapshot } from '../../src/vault/types.js';
 
 export function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -24,6 +25,107 @@ export function makeFinding(overrides: Partial<Finding> = {}): Finding {
       summary: 'Static trace with local invoice and tenant fixtures.'
     },
     ...overrides
+  };
+}
+
+const snapshotTimestamps: Record<string, { startedAt: string; completedAt: string }> = {
+  'day-1': {
+    startedAt: '2026-06-01T09:59:00.000Z',
+    completedAt: '2026-06-01T10:00:00.000Z'
+  },
+  'day-2-repeat': {
+    startedAt: '2026-06-02T09:59:00.000Z',
+    completedAt: '2026-06-02T10:00:00.000Z'
+  },
+  'day-2-fixed': {
+    startedAt: '2026-06-02T10:59:00.000Z',
+    completedAt: '2026-06-02T11:00:00.000Z'
+  },
+  'day-5': {
+    startedAt: '2026-06-05T09:59:00.000Z',
+    completedAt: '2026-06-05T10:00:00.000Z'
+  },
+  'day-6-empty': {
+    startedAt: '2026-06-06T09:59:00.000Z',
+    completedAt: '2026-06-06T10:00:00.000Z'
+  }
+};
+
+function timestampsFor(runId: string): { startedAt: string; completedAt: string } {
+  return (
+    snapshotTimestamps[runId] ?? {
+      startedAt: '2026-06-30T09:59:00.000Z',
+      completedAt: '2026-06-30T10:00:00.000Z'
+    }
+  );
+}
+
+export function makeSnapshot(
+  runId: string,
+  lifecycleInput: 'observed' | 'verified_fixed'
+): VaultRunSnapshot {
+  const timestamps = timestampsFor(runId);
+  const finding =
+    lifecycleInput === 'verified_fixed'
+      ? makeFinding({
+          status: 'fixed',
+          fixStatus: 'verified_fixed',
+          patchStatus: 'verified_fixed',
+          verificationStatus: 'passed'
+        })
+      : makeFinding();
+  const patchOutcome = lifecycleInput === 'verified_fixed' ? 'verified_fixed' : 'suggested';
+
+  return {
+    run: {
+      id: runId,
+      mode: 'local',
+      scopeHash: 'a'.repeat(64),
+      startedAt: timestamps.startedAt,
+      completedAt: timestamps.completedAt,
+      reportPath: 'reports/vault/index.html'
+    },
+    findings: [
+      {
+        finding,
+        fingerprint: 'invoice-fingerprint',
+        lifecycleInput
+      }
+    ],
+    patches: [
+      {
+        id: `patch-${runId}`,
+        runId,
+        findingFingerprint: 'invoice-fingerprint',
+        patternId: 'tenant-scope-query',
+        ruleId: finding.ruleId,
+        framework: 'nextjs',
+        fileRole: 'api_route',
+        strategy: lifecycleInput === 'verified_fixed' ? 'verified-fix' : 'investigate',
+        changePattern: lifecycleInput === 'verified_fixed' ? 'add tenant predicate' : 'document missing tenant predicate',
+        outcome: patchOutcome,
+        verificationEvidence:
+          lifecycleInput === 'verified_fixed'
+            ? 'Cross-tenant request denied after fix'
+            : 'Static trace still lacks tenant predicate',
+        observedAt: timestamps.completedAt
+      }
+    ],
+    replays: [
+      {
+        id: `replay-${runId}`,
+        runId,
+        findingFingerprint: 'invoice-fingerprint',
+        replayId: `replay-${runId}`,
+        status: lifecycleInput === 'verified_fixed' ? 'passed' : 'not_run',
+        evidence:
+          lifecycleInput === 'verified_fixed'
+            ? 'Replay denied cross-tenant access'
+            : 'Replay not run',
+        localOnly: true,
+        observedAt: timestamps.completedAt
+      }
+    ]
   };
 }
 
