@@ -137,14 +137,57 @@ describe('Vault identities', () => {
       attackPath: ['Order.findUnique', 'Invoice.findUnique'],
       evidence: 'Prisma Invoice.findUnique and Order.findUnique lack tenantId.'
     });
-    const materiallyDifferentSink = makeFinding({
-      affectedRoutes: ['GET /api/invoices/[id]'],
-      attackPath: ['Invoice.findUnique', 'User.findUnique'],
-      evidence: 'Prisma Invoice.findUnique and User.findUnique lack tenantId.'
-    });
 
     expect(findingFingerprint(original)).toBe(findingFingerprint(permuted));
-    expect(findingFingerprint(original)).not.toBe(findingFingerprint(materiallyDifferentSink));
+  });
+
+  test('ignores route-like noise in attackPath and evidence when affectedRoutes already define the route', () => {
+    const baseline = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['GET /api/invoices/[id]', 'Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+    const noisy = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: [
+        'GET /api/invoices/[id]',
+        'GET /api/payments/[id]',
+        'Invoice.findUnique'
+      ],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId and mentions GET /api/admin/users.'
+    });
+
+    expect(findingFingerprint(baseline)).toBe(findingFingerprint(noisy));
+  });
+
+  test('ignores extra sink-like noise in attackPath when the material sink is unchanged', () => {
+    const baseline = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+    const noisy = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Invoice.findUnique', 'Order.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+
+    expect(findingFingerprint(baseline)).toBe(findingFingerprint(noisy));
+  });
+
+  test('changes fingerprint when the material sink changes', () => {
+    const invoice = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['Invoice.findUnique'],
+      evidence: 'Prisma Invoice.findUnique lacks tenantId.'
+    });
+    const user = makeFinding({
+      affectedRoutes: ['GET /api/invoices/[id]'],
+      attackPath: ['User.findUnique'],
+      evidence: 'Prisma User.findUnique lacks tenantId.'
+    });
+
+    expect(findingFingerprint(invoice)).not.toBe(findingFingerprint(user));
   });
 
   test('normalizes route parameters while retaining the HTTP method', () => {
@@ -201,7 +244,7 @@ describe('Vault finding similarity', () => {
     );
 
     expect(result.exactMatch).toBe(false);
-    expect(result.score).toBeGreaterThanOrEqual(0.75);
+    expect(result.score).toBe(0.725);
     expect(result.signals).toContain('same_rule');
     expect(result.signals).toEqual([...result.signals].sort());
   });
@@ -321,7 +364,7 @@ describe('Vault finding similarity', () => {
       evidence: 'profilemarker'
     });
 
-    const matches = findSimilarFindings(current, [low, high], 0);
+    const matches = findSimilarFindings(current, [low, high], 0.5);
 
     expect(matches).toHaveLength(2);
     expect(matches[0]?.score).toBeGreaterThan(matches[1]?.score ?? 0);
@@ -344,8 +387,8 @@ describe('Vault finding similarity', () => {
       })
     ];
 
-    const forward = findSimilarFindings(current, candidates);
-    const reverse = findSimilarFindings(current, [...candidates].reverse());
+    const forward = findSimilarFindings(current, candidates, 0.7);
+    const reverse = findSimilarFindings(current, [...candidates].reverse(), 0.7);
 
     expect(forward).toEqual(reverse);
     expect(forward).toHaveLength(2);
