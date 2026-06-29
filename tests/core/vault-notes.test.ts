@@ -7,6 +7,7 @@ import { buildVaultGraph } from '../../src/vault/graph.js';
 import { buildPatchMemory } from '../../src/vault/history.js';
 import {
   writeVaultNotes,
+  type VaultNoteSummary,
   type WriteVaultNotesInput
 } from '../../src/vault/markdown.js';
 import { redactVaultText, safeSlug } from '../../src/vault/redaction.js';
@@ -30,19 +31,22 @@ function relocateInput(input: BuildVaultGraphInput, workspace: string): BuildVau
 }
 
 function vaultFixture(workspace: string): WriteVaultNotesInput {
-  const input = relocateInput(makeGraphInput(), workspace);
-  const finding = input.findings[0]!;
-  finding.evidence = `api_key=secret-value observed at ${workspace}/app/api/invoices/[id]/route.ts`;
-  finding.validation.summary = `authorization=secret-value ${workspace}\\private`;
-  for (const event of input.history.findings) {
+  const sourceInput = makeGraphInput();
+  const sourceWorkspace = sourceInput.systemMap.workspace;
+  const finding = sourceInput.findings[0]!;
+  finding.evidence = `api_key=secret-value observed at ${sourceWorkspace}/app/api/invoices/[id]/route.ts`;
+  finding.validation.summary = `authorization=secret-value ${sourceWorkspace}\\private`;
+  for (const event of sourceInput.history.findings) {
     if (event.finding.id === finding.id) event.finding = finding;
   }
-  input.systemMap.routes[0]!.sourceSummary =
+  sourceInput.systemMap.routes[0]!.sourceSummary =
     '<script>alert(1)</script> api_key=secret-value';
+  const graph = buildVaultGraph(sourceInput);
+  const input = relocateInput(sourceInput, workspace);
 
   return {
     workspace,
-    graph: buildVaultGraph(input),
+    graph,
     history: input.history,
     systemMap: input.systemMap,
     invariantResults: input.invariantResults,
@@ -61,6 +65,30 @@ function routeProfileFixture(workspace: string): RouteProfileInput {
     ...fixture,
     route: fixture.systemMap.routes[0]!
   };
+}
+
+function relativeFile(workspace: string, file: string): string {
+  return path.relative(workspace, file).split(path.sep).join('/');
+}
+
+async function generatedFileContents(
+  workspace: string,
+  output: VaultNoteSummary
+): Promise<Record<string, string>> {
+  const files = [
+    ...output.findings,
+    ...output.routes,
+    ...output.invariants,
+    ...output.patches,
+    ...output.replays,
+    ...output.runs,
+    ...output.daily,
+    output.summaryPath
+  ];
+  const entries = await Promise.all(
+    files.map(async (file) => [relativeFile(workspace, file), await readFile(file, 'utf8')] as const)
+  );
+  return Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)));
 }
 
 afterEach(async () => {
@@ -104,16 +132,21 @@ describe('Vault Markdown memory', () => {
   });
 
   test('writes deterministic notes and stable state summary ordering', async () => {
-    const workspace = await temporaryWorkspace();
-    const fixture = vaultFixture(workspace);
+    const firstWorkspace = await temporaryWorkspace();
+    const secondWorkspace = await temporaryWorkspace();
+    const firstFixture = vaultFixture(firstWorkspace);
+    const secondFixture = vaultFixture(secondWorkspace);
 
-    const first = await writeVaultNotes(fixture);
-    const firstFinding = await readFile(first.findings[0]!, 'utf8');
-    const firstSummary = await readFile(first.summaryPath, 'utf8');
-    const second = await writeVaultNotes(fixture);
+    const first = await writeVaultNotes(firstFixture);
+    const second = await writeVaultNotes(secondFixture);
+    const firstFiles = await generatedFileContents(firstWorkspace, first);
+    const secondFiles = await generatedFileContents(secondWorkspace, second);
 
-    expect(await readFile(second.findings[0]!, 'utf8')).toBe(firstFinding);
-    expect(await readFile(second.summaryPath, 'utf8')).toBe(firstSummary);
+    expect(firstFixture).not.toBe(secondFixture);
+    expect(Object.keys(secondFiles)).toEqual(Object.keys(firstFiles));
+    expect(secondFiles).toEqual(firstFiles);
+    const firstFinding = firstFiles[relativeFile(firstWorkspace, first.findings[0]!)]!;
+    const firstSummary = firstFiles[relativeFile(firstWorkspace, first.summaryPath)]!;
     expect(firstFinding.indexOf('type: finding')).toBeLessThan(
       firstFinding.indexOf('status:')
     );
@@ -178,9 +211,11 @@ describe('Vault redaction', () => {
   test('redacts sensitive text and slash variants of regex-heavy workspaces', () => {
     const workspace = '/tmp/Protect.Me+(Please)[vault]';
     const backslashWorkspace = workspace.replaceAll('/', '\\');
+    const unrelatedBackslashes = String.raw`C:\outside\evidence\trace.txt literal\nsequence`;
     const value = [
       `api_key=secret-value ${workspace}/private/file.ts`,
-      `password=hunter2 ${backslashWorkspace}\\private\\file.ts`
+      `password=hunter2 ${backslashWorkspace}\\private\\file.ts`,
+      unrelatedBackslashes
     ].join('\n');
 
     const redacted = redactVaultText(value, `${workspace}/`);
@@ -190,6 +225,7 @@ describe('Vault redaction', () => {
     expect(redacted).not.toContain(workspace);
     expect(redacted).not.toContain(backslashWorkspace);
     expect(redacted.match(/<workspace>/g)).toHaveLength(2);
+    expect(redacted).toContain(unrelatedBackslashes);
   });
 
   test('creates deterministic lowercase ASCII path-safe slugs with a fallback', () => {
