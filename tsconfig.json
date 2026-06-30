@@ -14,6 +14,13 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "tests/core/**/*.ts", "eslint.config.js", "vitest.config.ts"],
+  "include": [
+    "src/**/*.ts",
+    "tests/core/**/*.ts",
+    "tests/browser/**/*.ts",
+    "eslint.config.js",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
   "exclude": ["dist", "node_modules"]
 }

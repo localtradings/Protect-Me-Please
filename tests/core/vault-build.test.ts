@@ -42,4 +42,11 @@ describe('Vault UI build pipeline', () => {
     await expect(access(path.join(repositoryRoot, 'dist/vault-ui/vault-graph.js'))).resolves.toBeUndefined();
     await expect(access(path.join(repositoryRoot, 'dist/vault-ui/vault.css'))).resolves.toBeUndefined();
   });
+
+  test('keeps Vitest scoped away from Playwright browser specs', async () => {
+    const config = await readFile(path.join(repositoryRoot, 'vitest.config.ts'), 'utf8');
+
+    expect(config).toContain("include: ['tests/core/**/*.test.ts']");
+    expect(config).not.toContain("include: ['tests/**/*.test.ts']");
+  });
 });

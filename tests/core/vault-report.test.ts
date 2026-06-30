@@ -84,6 +84,8 @@ describe('offline Vault report', () => {
     expect(html).toContain('./assets/vault.css');
     expect(html).toContain('./assets/vault-graph.js');
     expect(html).toContain("default-src 'self' data: blob:");
+    expect(html).toContain("style-src-attr 'unsafe-inline'");
+    expect(html).toContain("style-src-elem 'self' 'unsafe-inline'");
     expect(html).not.toMatch(/https?:\/\//i);
     expect(html).not.toContain('</script><script>alert(1)</script>');
     await access(path.join(workspace, 'reports/vault/assets/vault-graph.js'));
