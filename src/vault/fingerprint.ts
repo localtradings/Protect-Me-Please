@@ -24,6 +24,7 @@ const controlTokens: Record<string, readonly string[]> = {
 const qualifiedSinkPattern = /\b(?:prisma\.)?([A-Za-z_$][A-Za-z0-9_$]*\.(?:create|delete|deleteMany|execute|findFirst|findMany|findUnique|insert|invoke|query|read|remove|save|update|updateMany|upsert|write))\b/gi;
 const commandSinkPattern = /\b((?:approve|create|delete|deploy|disable|execute|fetch|get|insert|invoke|list|read|refund|remove|revoke|run|save|send|transfer|update|write)[A-Z][A-Za-z0-9_$]*)\b/g;
 const explicitToolPattern = /\b([A-Z][A-Za-z0-9_$]*(?:Action|Handler|Repository|Service|Sink|Tool))\b/g;
+const bareModelSinkPattern = /^[A-Z][A-Za-z0-9_$]*$/;
 const assetTokenSet = new Set([
   'asset',
   'attachment',
@@ -253,6 +254,15 @@ function collectSinkCandidates(values: string[]): SinkCandidate[] {
       if (!current || score > current.score) candidates.set(normalized, { value: normalized, score });
     }
 
+    if (bareModelSinkPattern.test(value)) {
+      const normalized = normalizeSinkValue(value);
+      const score = 150 + normalized.length;
+      const current = candidates.get(normalized);
+      if (!current || score > current.score) {
+        candidates.set(normalized, { value: normalized, score });
+      }
+    }
+
     for (const token of splitTokenCandidates(value)) {
       if (!assetTokenSet.has(token)) continue;
       const normalized = normalizeSinkValue(token);
@@ -272,7 +282,9 @@ function pickPrimarySink(values: string[]): string | undefined {
 }
 
 function sinkForFinding(attackPath: string[], evidence: string): string {
-  return pickPrimarySink(attackPath) ?? pickPrimarySink([evidence]) ?? 'unknown';
+  const attackCandidate = collectSinkCandidates(attackPath)[0];
+  if (attackCandidate && attackCandidate.score >= 200) return attackCandidate.value;
+  return pickPrimarySink([evidence]) ?? attackCandidate?.value ?? 'unknown';
 }
 
 function evidenceControlTags(evidence: string): string[] {

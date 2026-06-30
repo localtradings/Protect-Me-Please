@@ -1,0 +1,42 @@
+{
+  "runId": "day-2",
+  "completedAt": "2026-06-02T10:00:00.000Z",
+  "findings": [
+    {
+      "id": "invoice-day-2",
+      "ruleId": "BP-BOLA-002",
+      "title": "Tenant escape",
+      "severity": "high",
+      "status": "fixed",
+      "fixStatus": "verified_fixed",
+      "proofMode": "http_replay_local_only",
+      "affectedFiles": ["app/api/invoices/[id]/route.ts"],
+      "affectedRoutes": ["GET /api/invoices/[id]"],
+      "attackPath": ["GET /api/invoices/[id]", "Invoice"],
+      "evidence": "Prisma Invoice lookup lacks tenantId",
+      "exploitabilityReasoning": "Request id reaches Invoice",
+      "recommendation": "Add tenantId",
+      "patchStatus": "verified_fixed",
+      "verificationStatus": "passed",
+      "validation": {
+        "mode": "local",
+        "destructive": false,
+        "productionTouched": false,
+        "summary": "local replay blocked after tenant predicate"
+      }
+    }
+  ],
+  "verification": {
+    "generatedAt": "2026-06-02T10:00:00.000Z",
+    "items": [
+      {
+        "findingId": "invoice-day-2",
+        "status": "verified_fixed",
+        "proofMode": "http_replay_local_only",
+        "productionTouched": false,
+        "destructive": false,
+        "summary": "Tenant predicate blocked the cross-tenant replay."
+      }
+    ]
+  }
+}

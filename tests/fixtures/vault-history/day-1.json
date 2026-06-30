@@ -1,0 +1,33 @@
+{
+  "runId": "day-1",
+  "completedAt": "2026-06-01T10:00:00.000Z",
+  "findings": [
+    {
+      "id": "invoice-day-1",
+      "ruleId": "BP-BOLA-002",
+      "title": "Tenant escape",
+      "severity": "high",
+      "status": "validated",
+      "fixStatus": "suggested",
+      "proofMode": "static_trace",
+      "affectedFiles": ["app/api/invoices/[id]/route.ts"],
+      "affectedRoutes": ["GET /api/invoices/[id]"],
+      "attackPath": ["GET /api/invoices/[id]", "Invoice"],
+      "evidence": "Prisma Invoice lookup lacks tenantId",
+      "exploitabilityReasoning": "Request id reaches Invoice",
+      "recommendation": "Add tenantId",
+      "patchStatus": "suggested",
+      "verificationStatus": "not_run",
+      "validation": {
+        "mode": "local",
+        "destructive": false,
+        "productionTouched": false,
+        "summary": "static trace"
+      }
+    }
+  ],
+  "verification": {
+    "generatedAt": "2026-06-01T10:00:00.000Z",
+    "items": []
+  }
+}

@@ -101,6 +101,9 @@ breachproof report --format sarif
 breachproof report --format html
 breachproof vibe audit
 breachproof ai-lab run
+breachproof vault build
+breachproof vault view
+breachproof vault timeline
 breachproof skill export --codex
 breachproof ci
 breachproof doctor
@@ -194,6 +197,23 @@ cp -R tests/fixtures/sample-next-express/. "$tmpdir"
 ```
 
 Open `reports/final-report.html`, then inspect `reports/evidence/<findingId>/README.md` and `reports/patches/<findingId>/scorecard.json`.
+
+## BreachProof Vault Security Memory
+
+Every autonomous run records an append-only local snapshot and builds an offline 3D security-memory report at `reports/vault/index.html`. The report connects routes, findings, invariants, patches, replay evidence, tests, and protected assets without fetching remote scripts or sending repository data away from the workspace.
+
+The deterministic history fixture demonstrates the regression-memory story:
+
+```text
+Day 1: /api/invoices/[id] violates tenant-isolation -> new
+Day 2: tenant predicate replay is blocked -> verified fixed
+Day 5: invoice issue returns -> reopened
+Day 5: /api/orders/[id] has the same control/sink pattern -> similar bug detected
+```
+
+Use `breachproof vault build` to rebuild from existing report artifacts, `breachproof vault view` to print the local report path, and `breachproof vault timeline` to inspect lifecycle events. `vault view` opens nothing unless `--open` is explicitly supplied.
+
+![Implemented BreachProof Vault report](docs/assets/breachproof-vault-implemented.png)
 
 ## Security Invariants
 

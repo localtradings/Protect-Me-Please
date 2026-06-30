@@ -93,6 +93,10 @@ describe('Vault identities', () => {
     expect(findingIdentityTraits(finding).sink).toBe('invoice.findunique');
   });
 
+  test('extracts a bare data-model sink from a structured attack path', () => {
+    expect(findingIdentityTraits(makeFinding()).sink).toBe('invoice');
+  });
+
   test('extracts a production AI tool sink before a generic impact description', () => {
     const deleteUser = makeAiToolFinding();
     const disableUser = makeAiToolFinding({
@@ -244,8 +248,9 @@ describe('Vault finding similarity', () => {
     );
 
     expect(result.exactMatch).toBe(false);
-    expect(result.score).toBe(0.725);
+    expect(result.score).toBe(0.925);
     expect(result.signals).toContain('same_rule');
+    expect(result.signals).toContain('same_sink');
     expect(result.signals).toEqual([...result.signals].sort());
   });
 
