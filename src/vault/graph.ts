@@ -565,15 +565,23 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   }
 
   const evidenceReplayByFindingId = new Map<string, VaultNode>();
-  for (const item of [...input.evidence.items].sort((left, right) =>
-    left.findingId.localeCompare(right.findingId)
+  const evidenceReplayCounts = new Map<string, number>();
+  for (const item of [...input.evidence.items].sort(
+    (left, right) =>
+      left.findingId.localeCompare(right.findingId) ||
+      left.directory.localeCompare(right.directory) ||
+      left.proofMode.localeCompare(right.proofMode) ||
+      left.status.localeCompare(right.status)
   )) {
     const occurrence =
       occurrenceForFinding(occurrences, item.findingId, input.currentRunId) ??
       occurrenceForFinding(occurrences, item.findingId);
     const fingerprint = occurrence?.fingerprint ?? stableSlug(item.findingId);
+    const replayBaseId = `replay:evidence:${input.currentRunId}:${fingerprint}`;
+    const replayCount = (evidenceReplayCounts.get(replayBaseId) ?? 0) + 1;
+    evidenceReplayCounts.set(replayBaseId, replayCount);
     const replayNode = addNode({
-      id: `replay:evidence:${input.currentRunId}:${fingerprint}`,
+      id: replayCount === 1 ? replayBaseId : `${replayBaseId}:${replayCount}`,
       type: 'replay',
       label: `Evidence replay for ${item.findingId}`,
       status: item.status,
@@ -677,15 +685,22 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
     }
   }
 
-  for (const item of [...input.patchSummary.items].sort((left, right) =>
-    left.findingId.localeCompare(right.findingId)
+  const patchSummaryCounts = new Map<string, number>();
+  for (const item of [...input.patchSummary.items].sort(
+    (left, right) =>
+      left.findingId.localeCompare(right.findingId) ||
+      left.status.localeCompare(right.status) ||
+      left.summary.localeCompare(right.summary)
   )) {
     const occurrence =
       occurrenceForFinding(occurrences, item.findingId, input.currentRunId) ??
       occurrenceForFinding(occurrences, item.findingId);
     const fingerprint = occurrence?.fingerprint ?? stableSlug(item.findingId);
+    const patchBaseId = `patch:summary:${input.currentRunId}:${fingerprint}:${item.status}`;
+    const patchCount = (patchSummaryCounts.get(patchBaseId) ?? 0) + 1;
+    patchSummaryCounts.set(patchBaseId, patchCount);
     const patchNode = addNode({
-      id: `patch:summary:${input.currentRunId}:${fingerprint}:${item.status}`,
+      id: patchCount === 1 ? patchBaseId : `${patchBaseId}:${patchCount}`,
       type: 'patch',
       label: item.summary,
       status: item.status,

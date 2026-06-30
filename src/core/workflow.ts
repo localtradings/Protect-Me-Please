@@ -20,9 +20,10 @@ import { renderHtmlReport } from '../reporting/html-report.js';
 import { createReportModel, renderJsonReport, renderMarkdownReport, renderSarifReport } from '../reporting/report-generator.js';
 import { appendAuditEvent } from './audit.js';
 import { writeScopeConfig } from './config.js';
-import { approveScope, approvalMatchesConfig, loadApproval } from './scope.js';
+import { approveScope, approvalMatchesConfig, computeScopeHash, loadApproval } from './scope.js';
 import { initializeStateStore, recordRun } from './state.js';
 import type { Finding, PatchSummary, ProtectMode, ScopeConfig, Verification } from './types.js';
+import { recordAndBuildVault } from '../vault/report.js';
 
 export interface RunAutonomousWorkflowInput {
   workspace: string;
@@ -177,8 +178,27 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
     )
   ];
 
-  recordRun(db, { command: 'run', mode: config.mode, status: 'completed' });
-  db.close();
+  try {
+    const vault = await recordAndBuildVault({
+      workspace,
+      reportsDir: config.reportsDir,
+      mode: config.mode,
+      scopeHash: computeScopeHash(config),
+      systemMap,
+      findings,
+      invariantResults,
+      patchSummary,
+      patchTournament,
+      verification,
+      evidence: evidenceArtifacts,
+      startedAt: systemMap.generatedAt,
+      completedAt: report.generatedAt
+    });
+    artifacts.push(...vault.paths);
+    recordRun(db, { command: 'run', mode: config.mode, status: 'completed' });
+  } finally {
+    db.close();
+  }
   await appendAuditEvent(workspace, {
     action: 'run',
     actor: 'cli',

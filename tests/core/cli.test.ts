@@ -82,6 +82,9 @@ describe('CLI', () => {
 
       await Promise.all(artifacts.map((artifact) => access(path.join(workspace, 'reports', artifact))));
       expect(output).toContain('BreachProof run completed');
+      expect(await runCli(['vault', 'build'], workspace)).toContain('Vault built');
+      expect(await runCli(['vault', 'view'], workspace)).toContain('reports/vault/index.html');
+      expect(await runCli(['vault', 'timeline'], workspace)).toContain('new');
       expect(after).toBe(before);
     } finally {
       await rm(workspace, { recursive: true, force: true });

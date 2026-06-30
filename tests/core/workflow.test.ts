@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, cp, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -45,6 +45,12 @@ describe('autonomous proof and fix workflow', () => {
       expect(result.patchSummary.items.some((item) => item.status === 'patch_created')).toBe(true);
       expect(result.verification.items.every((item) => item.productionTouched === false)).toBe(true);
       expect(after).toBe(before);
+      await Promise.all([
+        access(path.join(workspace, '.breachproof/vault/daily')),
+        access(path.join(workspace, 'reports/vault/index.html')),
+        access(path.join(workspace, 'reports/vault/graph.json')),
+        access(path.join(workspace, 'reports/vault/timeline.json'))
+      ]);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Command } from 'commander';
 import { buildAttackGraph } from '../agents/attack-graph.js';
@@ -26,6 +27,9 @@ import { composeLocalCyberRange } from '../proof/range.js';
 import { renderHtmlReport } from '../reporting/html-report.js';
 import { createReportModel, renderJsonReport, renderMarkdownReport, renderSarifReport } from '../reporting/report-generator.js';
 import { exportCodexSkill } from '../skills/exporter.js';
+import { projectLifecycle } from '../vault/history.js';
+import { rebuildVaultFromReports } from '../vault/report.js';
+import { readVaultHistory } from '../vault/store.js';
 
 interface RuntimeContext {
   workspace: string;
@@ -417,6 +421,100 @@ configureCommonOptions(aiLab.command('run').description('Inspect AI-agent tool c
     console.log(`AI-agent security lab completed: ${result.issues.length} issues. See ${context.config.reportsDir}/ai-lab.md.`);
   }
 );
+
+async function buildVaultCommand(options: {
+  scope?: string;
+  mode?: ProtectMode;
+}): Promise<void> {
+  const context = await loadContext({ scope: options.scope, mode: options.mode });
+  const output = await rebuildVaultFromReports(
+    context.workspace,
+    context.config.reportsDir
+  );
+  console.log(
+    `Vault built: ${path.relative(context.workspace, output.indexFile).split(path.sep).join('/')}`
+  );
+}
+
+function assertLocalVaultReport(workspace: string, reportsDir: string): string {
+  const root = path.resolve(workspace);
+  const target = path.resolve(root, reportsDir, 'vault', 'index.html');
+  const relative = path.relative(root, target);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Vault report path must remain inside the local workspace.');
+  }
+  return target;
+}
+
+async function openLocalFile(target: string): Promise<void> {
+  const command =
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'explorer.exe'
+        : 'xdg-open';
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, [target], {
+      detached: true,
+      stdio: 'ignore',
+      shell: false
+    });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+async function viewVaultCommand(options: {
+  scope?: string;
+  mode?: ProtectMode;
+  open?: boolean;
+}): Promise<void> {
+  const context = await loadContext({ scope: options.scope, mode: options.mode });
+  const target = assertLocalVaultReport(
+    context.workspace,
+    context.config.reportsDir
+  );
+  await access(target);
+  console.log(path.relative(context.workspace, target).split(path.sep).join('/'));
+  if (options.open) await openLocalFile(target);
+}
+
+async function printVaultTimelineCommand(options: {
+  scope?: string;
+  mode?: ProtectMode;
+}): Promise<void> {
+  const context = await loadContext({ scope: options.scope, mode: options.mode });
+  const db = initializeStateStore(context.workspace);
+  try {
+    const timeline = projectLifecycle(readVaultHistory(db));
+    if (timeline.length === 0) {
+      console.log('Vault timeline is empty. Run breachproof run --auto first.');
+      return;
+    }
+    console.log(
+      timeline
+        .map(
+          (event) =>
+            `${event.timestamp} ${event.lifecycle} ${event.ruleId} ${event.title}`
+        )
+        .join('\n')
+    );
+  } finally {
+    db.close();
+  }
+}
+
+const vault = program
+  .command('vault')
+  .description('Build and inspect the local security memory graph.');
+configureCommonOptions(vault.command('build')).action(buildVaultCommand);
+configureCommonOptions(
+  vault.command('view').option('--open', 'open the generated local report')
+).action(viewVaultCommand);
+configureCommonOptions(vault.command('timeline')).action(printVaultTimelineCommand);
 
 program.command('doctor').description('Check local runtime prerequisites.').action(() => {
   console.log(`BreachProof doctor

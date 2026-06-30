@@ -126,6 +126,42 @@ describe('Vault graph projection', () => {
     expect(() => buildVaultGraph(input)).toThrow(/duplicate node id/i);
   });
 
+  test('keeps repeated evidence entries for one finding as distinct replay nodes', () => {
+    const input = makeGraphInput();
+    input.evidence.items.push({
+      ...input.evidence.items[0]!,
+      directory: 'reports/evidence/generated-id-second'
+    });
+
+    const graph = buildVaultGraph(input);
+    const replayIds = graph.nodes
+      .filter((node) => node.id.startsWith('replay:evidence:day-5:'))
+      .map((node) => node.id);
+
+    expect(replayIds).toEqual([
+      'replay:evidence:day-5:invoice-fingerprint',
+      'replay:evidence:day-5:invoice-fingerprint:2'
+    ]);
+  });
+
+  test('keeps repeated patch summaries for one fingerprint as distinct nodes', () => {
+    const input = makeGraphInput();
+    input.patchSummary.items.push({
+      ...input.patchSummary.items[0]!,
+      summary: 'Added a shared tenant policy guard.'
+    });
+
+    const graph = buildVaultGraph(input);
+    const patchIds = graph.nodes
+      .filter((node) => node.id.startsWith('patch:summary:day-5:'))
+      .map((node) => node.id);
+
+    expect(patchIds).toEqual([
+      'patch:summary:day-5:invoice-fingerprint:verified_fixed',
+      'patch:summary:day-5:invoice-fingerprint:verified_fixed:2'
+    ]);
+  });
+
   test('does not treat a tournament recommendation as a verified fix', () => {
     const input = makeGraphInput();
     input.patchSummary.items = [];
