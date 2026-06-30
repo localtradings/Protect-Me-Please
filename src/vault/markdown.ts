@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -135,7 +136,8 @@ function nodeGroupKey(node: VaultNode): string {
     const basename = notePath.split('/').at(-1) ?? node.id;
     return safeSlug(basename.replace(/\.md$/i, ''));
   }
-  return safeSlug(node.id);
+  const idHash = createHash('sha256').update(node.id).digest('hex').slice(0, 8);
+  return `${safeSlug(node.id)}-${idHash}`;
 }
 
 function groupsFor(input: WriteVaultNotesInput, type: VaultNodeType): NodeGroup[] {

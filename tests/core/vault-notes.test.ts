@@ -15,6 +15,7 @@ import {
   renderRouteProfile,
   type RouteProfileInput
 } from '../../src/vault/route-profile.js';
+import { vaultHistorySchema } from '../../src/vault/types.js';
 import { makeGraphInput } from '../helpers/vault-fixtures.js';
 
 const workspaces: string[] = [];
@@ -254,15 +255,67 @@ describe('Vault Markdown memory', () => {
     const summary = await readFile(output.summaryPath, 'utf8');
 
     for (const node of patchesWithoutPaths) {
-      const fallbackName = `${safeSlug(node.id)}.md`;
-      const note = output.patches.find((file) => path.basename(file) === fallbackName);
+      const fallbackName = new RegExp(`^${safeSlug(node.id)}-[a-f0-9]{8}\\.md$`);
+      const note = output.patches.find((file) => fallbackName.test(path.basename(file)));
       expect(note).toBeDefined();
       expect(await readFile(note!, 'utf8')).toContain(node.label);
-      expect(summary).toContain(`.breachproof/vault/patches/${fallbackName}`);
+      expect(summary).toContain(
+        `.breachproof/vault/patches/${path.basename(note!)}`
+      );
     }
     expect(new Set(output.patches.map((file) => path.basename(file))).size).toBe(
       output.patches.length
     );
+  });
+
+  test('hashes colliding fallback slugs into distinct deterministic note keys', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const sourceNode = fixture.graph.nodes.find(
+      (node) => node.type === 'patch' && !node.notePath
+    )!;
+    fixture.graph.nodes.push(
+      {
+        ...sourceNode,
+        id: 'patch:a/b',
+        label: 'Slash collision patch',
+        notePath: undefined
+      },
+      {
+        ...sourceNode,
+        id: 'patch:a-b',
+        label: 'Hyphen collision patch',
+        notePath: undefined
+      }
+    );
+
+    const first = await writeVaultNotes(fixture);
+    const firstFiles = await generatedFileContents(workspace, first);
+    const collisionEntries = Object.entries(firstFiles).filter(
+      ([file, content]) =>
+        file.startsWith('.breachproof/vault/patches/patch-a-b') &&
+        (content.includes('Slash collision patch') ||
+          content.includes('Hyphen collision patch'))
+    );
+
+    expect(collisionEntries).toHaveLength(2);
+    expect(new Set(collisionEntries.map(([file]) => file)).size).toBe(2);
+    expect(
+      collisionEntries.every(([file]) =>
+        /patch-a-b-[a-f0-9]{8}\.md$/.test(file)
+      )
+    ).toBe(true);
+    expect(collisionEntries.some(([, content]) => content.includes('Slash collision patch'))).toBe(
+      true
+    );
+    expect(collisionEntries.some(([, content]) => content.includes('Hyphen collision patch'))).toBe(
+      true
+    );
+    const summary = await readFile(first.summaryPath, 'utf8');
+    for (const [file] of collisionEntries) expect(summary).toContain(file);
+
+    const second = await writeVaultNotes(fixture);
+    expect(await generatedFileContents(workspace, second)).toEqual(firstFiles);
   });
 
   test('escapes artifact link labels so Markdown delimiters cannot terminate them', async () => {
@@ -458,7 +511,7 @@ describe('Vault route profiles', () => {
     const repeatedEvent = {
       ...sourceEvent,
       id: 'finding-repeat-a',
-      runId: 'day-5',
+      runId: 'repeat-run-a',
       observedAt: '2026-06-06T10:00:00.000Z',
       verificationStatus: 'passed' as const,
       finding: {
@@ -471,11 +524,13 @@ describe('Vault route profiles', () => {
     };
     fixture.history.findings.push(repeatedEvent, {
       ...repeatedEvent,
-      id: 'finding-repeat-b'
+      id: 'finding-repeat-b',
+      runId: 'repeat-run-b'
     });
     fixture.history.findings.push({
       ...repeatedEvent,
       id: 'finding-later',
+      runId: 'later-run',
       observedAt: '2026-06-07T10:00:00.000Z',
       finding: {
         ...repeatedEvent.finding,
@@ -485,6 +540,33 @@ describe('Vault route profiles', () => {
         }
       }
     });
+    const sourceRun = fixture.history.runs.find((run) => run.id === 'day-5')!;
+    fixture.history.runs.push(
+      {
+        ...sourceRun,
+        id: 'repeat-run-a',
+        startedAt: '2026-06-06T09:59:00.000Z',
+        completedAt: '2026-06-06T10:00:00.000Z'
+      },
+      {
+        ...sourceRun,
+        id: 'repeat-run-b',
+        startedAt: '2026-06-06T09:59:00.000Z',
+        completedAt: '2026-06-06T10:00:00.000Z'
+      },
+      {
+        ...sourceRun,
+        id: 'later-run',
+        startedAt: '2026-06-07T09:59:00.000Z',
+        completedAt: '2026-06-07T10:00:00.000Z'
+      }
+    );
+
+    const addedEvents = fixture.history.findings.slice(-3);
+    expect(new Set(addedEvents.map((event) => event.runId)).size).toBe(
+      addedEvents.length
+    );
+    expect(vaultHistorySchema.parse(fixture.history)).toEqual(fixture.history);
 
     const html = renderRouteProfile(fixture);
     const repeated =
