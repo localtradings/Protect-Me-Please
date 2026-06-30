@@ -14,7 +14,7 @@ function workspaceMatcher(workspace: string): RegExp | undefined {
         : escapeRegExp(character)
     )
     .join('');
-  return new RegExp(pattern, 'g');
+  return new RegExp(`${pattern}(?=$|[\\\\/])`, 'g');
 }
 
 export function redactVaultText(value: string, workspace: string): string {

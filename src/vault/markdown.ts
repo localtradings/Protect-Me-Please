@@ -110,6 +110,25 @@ function bullets(
   return safeValues.map((value) => `- ${value}`).join('\n');
 }
 
+function orderedBullets(
+  input: WriteVaultNotesInput,
+  values: string[],
+  emptyMessage: string
+): string {
+  const safeValues = values.map((value) => markdownText(input, value)).filter(Boolean);
+  if (safeValues.length === 0) return emptyMessage;
+  return safeValues.map((value) => `- ${value}`).join('\n');
+}
+
+function markdownLinkLabel(input: WriteVaultNotesInput, value: string): string {
+  return markdownText(input, value)
+    .replace(/\\/g, '\\\\')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
 function nodeGroupKey(node: VaultNode): string {
   const notePath = node.notePath?.replace(/\\/g, '/');
   if (notePath) {
@@ -121,9 +140,7 @@ function nodeGroupKey(node: VaultNode): string {
 
 function groupsFor(input: WriteVaultNotesInput, type: VaultNodeType): NodeGroup[] {
   const groups = new Map<string, VaultNode[]>();
-  for (const node of input.graph.nodes.filter(
-    (candidate) => candidate.type === type && candidate.notePath
-  )) {
+  for (const node of input.graph.nodes.filter((candidate) => candidate.type === type)) {
     const slug = nodeGroupKey(node);
     groups.set(slug, [...(groups.get(slug) ?? []), node]);
   }
@@ -195,7 +212,7 @@ function wikiLink(input: WriteVaultNotesInput, node: VaultNode): string {
         .map((segment) => encodeURIComponent(segment))
         .join('/');
       if (relativeArtifact) {
-        return `[${markdownText(input, node.label)}](../../../${relativeArtifact})`;
+        return `[${markdownLinkLabel(input, node.label)}](../../../${relativeArtifact})`;
       }
     }
     return markdownText(input, node.label);
@@ -231,10 +248,55 @@ function findingEvents(input: WriteVaultNotesInput, nodes: VaultNode[]) {
     );
 }
 
+function latestFindingNode(
+  input: WriteVaultNotesInput,
+  group: NodeGroup,
+  latestEvent: VaultHistory['findings'][number] | undefined
+): VaultNode {
+  if (latestEvent) {
+    const exactNode = group.nodes.find((node) => node.id === `finding:${latestEvent.id}`);
+    if (exactNode) return exactNode;
+    const runNode = [...group.nodes]
+      .filter(
+        (node) =>
+          node.runId === latestEvent.runId &&
+          node.metadata.fingerprint === latestEvent.fingerprint
+      )
+      .sort((left, right) => compareText(left.id, right.id))
+      .at(-1);
+    if (runNode) return runNode;
+  }
+
+  const completedAtByRun = new Map(
+    input.history.runs.map((run) => [run.id, run.completedAt] as const)
+  );
+  return [...group.nodes].sort((left, right) => {
+    const leftTimestamp = left.runId ? (completedAtByRun.get(left.runId) ?? '') : '';
+    const rightTimestamp = right.runId ? (completedAtByRun.get(right.runId) ?? '') : '';
+    return compareText(leftTimestamp, rightTimestamp) || compareText(left.id, right.id);
+  }).at(-1)!;
+}
+
 function renderFindingNote(input: WriteVaultNotesInput, group: NodeGroup): string {
-  const latestNode = group.nodes.at(-1)!;
   const events = findingEvents(input, group.nodes);
   const latestEvent = events.at(-1);
+  const latestNode = latestFindingNode(input, group, latestEvent);
+  const latestTimelineEvent = latestEvent
+    ? input.graph.timeline
+        .filter(
+          (event) =>
+            event.findingFingerprint === latestEvent.fingerprint &&
+            event.runId === latestEvent.runId
+        )
+        .sort(
+          (left, right) =>
+            compareText(left.timestamp, right.timestamp) || compareText(left.id, right.id)
+        )
+        .at(-1)
+    : undefined;
+  const displayTitle = latestEvent?.finding.title ?? latestNode.label;
+  const displayStatus = latestNode.status || latestTimelineEvent?.lifecycle || 'unknown';
+  const displaySeverity = latestEvent?.finding.severity ?? latestNode.severity;
   const fingerprints = findingFingerprints(group.nodes);
   const fingerprintSet = new Set(fingerprints);
   const timeline = input.graph.timeline.filter((event) =>
@@ -259,23 +321,23 @@ function renderFindingNote(input: WriteVaultNotesInput, group: NodeGroup): strin
   return `${frontMatter(input, {
     type: 'finding',
     id: fingerprints[0] ?? latestNode.id,
-    title: latestNode.label,
-    status: latestNode.status,
-    severity: latestNode.severity,
+    title: displayTitle,
+    status: displayStatus,
+    severity: displaySeverity,
     generated_at: input.graph.generatedAt,
     runs: uniqueSorted(group.nodes.map((node) => node.runId).filter((value): value is string => Boolean(value)))
   })}
 
-# ${markdownText(input, latestNode.label)}
+# ${markdownText(input, displayTitle)}
 
 ## Lifecycle
 
-${bullets(
+${orderedBullets(
   input,
   timeline.map(
     (event) => `${event.timestamp} - ${event.lifecycle} in ${event.runId}${event.evidence ? `: ${event.evidence}` : ''}`
   ),
-  `Current status: ${markdownText(input, latestNode.status)}. No lifecycle events recorded.`
+  `Current status: ${markdownText(input, displayStatus)}. No lifecycle events recorded.`
 )}
 
 ## Routes
@@ -288,7 +350,7 @@ ${bullets(input, evidence, 'No evidence recorded.')}
 
 ## Attack Path
 
-${bullets(
+${orderedBullets(
   input,
   events.flatMap((event) => event.finding.attackPath).map((step, index) => `${index + 1}. ${step}`),
   'No attack path recorded.'
@@ -316,7 +378,7 @@ ${nodeLinks(input, similar, 'No similar findings recorded.')}
 
 ## Verification
 
-${bullets(
+${orderedBullets(
   input,
   events.flatMap((event) => [
     `${event.observedAt} - ${event.verificationStatus}`,
@@ -387,7 +449,7 @@ function renderRouteNote(input: WriteVaultNotesInput, group: NodeGroup): string 
 
 ## Authentication Boundaries
 
-- Authentication detected: ${route?.authDetected ? 'yes' : 'no'}
+- Authentication detected: ${route ? (route.authDetected ? 'yes' : 'no') : 'unavailable'}
 ${bullets(
   input,
   authBoundaries.map((boundary) => `${boundary.mechanism} in ${boundary.file}`),
@@ -396,8 +458,8 @@ ${bullets(
 
 ## Authorization And Tenant Controls
 
-- Ownership check detected: ${route?.ownershipCheckDetected ? 'yes' : 'no'}
-- Tenant scoping status: ${route?.ownershipCheckDetected ? 'detected' : 'not detected'}
+- Ownership check detected: ${route ? (route.ownershipCheckDetected ? 'yes' : 'no') : 'unavailable'}
+- Tenant scoping status: ${route ? (route.ownershipCheckDetected ? 'detected' : 'not detected') : 'unavailable'}
 
 ## Request-Controlled Privileged Fields
 
@@ -425,8 +487,8 @@ ${bullets(
 ## Jobs, Uploads, Webhooks, And AI Tools
 
 - Jobs: No connected jobs represented by the current system map.
-- Upload validation: ${route?.uploadValidationDetected ? 'detected' : 'not detected'}
-- Webhook signature verification: ${route?.webhookSignatureDetected ? 'detected' : 'not detected'}
+- Upload validation: ${route ? (route.uploadValidationDetected ? 'detected' : 'not detected') : 'unavailable'}
+- Webhook signature verification: ${route ? (route.webhookSignatureDetected ? 'detected' : 'not detected') : 'unavailable'}
 ${bullets(
   input,
   aiTools.map(
@@ -453,7 +515,7 @@ ${nodeLinks(input, tests, 'No regression tests recorded.')}
 
 ## Timeline
 
-${bullets(
+${orderedBullets(
   input,
   timeline.map((event) => `${event.timestamp} - ${event.lifecycle}: ${event.title}`),
   'No route finding timeline recorded.'
@@ -522,7 +584,7 @@ function renderPatchNote(input: WriteVaultNotesInput, group: NodeGroup): string 
 
 ## Patch History
 
-${bullets(
+${orderedBullets(
   input,
   events.map(
     (event) => `${event.observedAt} - ${event.outcome}: ${event.strategy} (${event.changePattern})`
@@ -542,7 +604,7 @@ ${bullets(
 
 ## Verification
 
-${bullets(
+${orderedBullets(
   input,
   [...events.map((event) => event.verificationEvidence), ...memory.map((item) => item.verificationEvidence)],
   'No verification evidence recorded.'

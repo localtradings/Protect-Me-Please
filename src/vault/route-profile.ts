@@ -48,6 +48,19 @@ function list(
     .join('')}</ul>`;
 }
 
+function orderedList(
+  input: RouteProfileInput,
+  values: string[],
+  emptyMessage: string
+): string {
+  if (values.length === 0) {
+    return `<p class="empty">${escapeHtml(emptyMessage, input.workspace)}</p>`;
+  }
+  return `<ul>${values
+    .map((value) => `<li>${escapeHtml(value, input.workspace)}</li>`)
+    .join('')}</ul>`;
+}
+
 function statusCard(
   input: RouteProfileInput,
   label: string,
@@ -189,6 +202,31 @@ export function renderRouteProfile(input: RouteProfileInput): string {
   const sourceRole = sourceRoles.join(', ') || 'route handler';
   const inbound = directRelationships(input, 'inbound');
   const outbound = directRelationships(input, 'outbound');
+  const completedAtByRun = new Map(
+    input.history.runs.map((run) => [run.id, run.completedAt] as const)
+  );
+  const verificationHistory = [
+    ...findingEvents.map((event, index) => ({
+      order: index,
+      timestamp: event.observedAt,
+      value: `${event.observedAt} - ${event.verificationStatus}: ${event.finding.validation.summary}`
+    })),
+    ...patches.map((patch, index) => ({
+      order: findingEvents.length + index,
+      timestamp: patch.observedAt,
+      value: `${patch.observedAt} - ${patch.outcome}: ${patch.verificationEvidence}`
+    })),
+    ...patchMemory.map((memory, index) => ({
+      order: findingEvents.length + patches.length + index,
+      timestamp: completedAtByRun.get(memory.verificationRunId) ?? memory.verificationRunId,
+      value: `${memory.verificationRunId} - ${memory.outcome}: ${memory.verificationEvidence}`
+    }))
+  ]
+    .sort(
+      (left, right) =>
+        left.timestamp.localeCompare(right.timestamp) || left.order - right.order
+    )
+    .map((entry) => entry.value);
 
   return `<!doctype html>
 <html lang="en">
@@ -292,7 +330,7 @@ export function renderRouteProfile(input: RouteProfileInput): string {
 
     <section>
       <h2>Current and historical findings</h2>
-      ${list(input, findings, 'No current or historical findings recorded for this route.')}
+      ${orderedList(input, findings, 'No current or historical findings recorded for this route.')}
     </section>
 
     <section>
@@ -318,7 +356,7 @@ export function renderRouteProfile(input: RouteProfileInput): string {
     <section class="two-column">
       <div class="panel">
         <h2>Replay evidence</h2>
-        ${list(
+        ${orderedList(
           input,
           replays.map(
             (replay) => `${replay.observedAt} - ${replay.status}: ${replay.evidence}; artifact ${replay.artifactPath ?? 'unavailable'}`
@@ -345,21 +383,7 @@ export function renderRouteProfile(input: RouteProfileInput): string {
       </div>
       <div class="panel">
         <h2>Verification history</h2>
-        ${list(
-          input,
-          [
-            ...findingEvents.map(
-              (event) => `${event.observedAt} - ${event.verificationStatus}: ${event.finding.validation.summary}`
-            ),
-            ...patches.map(
-              (patch) => `${patch.observedAt} - ${patch.outcome}: ${patch.verificationEvidence}`
-            ),
-            ...patchMemory.map(
-              (memory) => `${memory.verificationRunId} - ${memory.outcome}: ${memory.verificationEvidence}`
-            )
-          ],
-          'No verification history recorded.'
-        )}
+        ${orderedList(input, verificationHistory, 'No verification history recorded.')}
       </div>
     </section>
 

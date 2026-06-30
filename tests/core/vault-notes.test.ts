@@ -30,23 +30,25 @@ function relocateInput(input: BuildVaultGraphInput, workspace: string): BuildVau
   return JSON.parse(serialized) as BuildVaultGraphInput;
 }
 
-function vaultFixture(workspace: string): WriteVaultNotesInput {
-  const sourceInput = makeGraphInput();
-  const sourceWorkspace = sourceInput.systemMap.workspace;
-  const finding = sourceInput.findings[0]!;
-  finding.evidence = `api_key=secret-value observed at ${sourceWorkspace}/app/api/invoices/[id]/route.ts`;
-  finding.validation.summary = `authorization=secret-value ${sourceWorkspace}\\private`;
-  for (const event of sourceInput.history.findings) {
+function relocatedGraphInputFixture(workspace: string): BuildVaultGraphInput {
+  const input = relocateInput(makeGraphInput(), workspace);
+  const finding = input.findings[0]!;
+  finding.evidence = 'api_key=secret-value observed at <workspace>/app/api/invoices/[id]/route.ts';
+  finding.validation.summary = String.raw`authorization=secret-value <workspace>\private`;
+  for (const event of input.history.findings) {
     if (event.finding.id === finding.id) event.finding = finding;
   }
-  sourceInput.systemMap.routes[0]!.sourceSummary =
+  input.systemMap.routes[0]!.sourceSummary =
     '<script>alert(1)</script> api_key=secret-value';
-  const graph = buildVaultGraph(sourceInput);
-  const input = relocateInput(sourceInput, workspace);
+  return input;
+}
+
+function vaultFixture(workspace: string): WriteVaultNotesInput {
+  const input = relocatedGraphInputFixture(workspace);
 
   return {
     workspace,
-    graph,
+    graph: buildVaultGraph(input),
     history: input.history,
     systemMap: input.systemMap,
     invariantResults: input.invariantResults,
@@ -205,6 +207,165 @@ describe('Vault Markdown memory', () => {
       ).resolves.toBeUndefined();
     }
   });
+
+  test('preserves attack-path order and duplicate steps', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const orderedSteps = [
+      'zeta entry',
+      'alpha lookup',
+      'zeta entry',
+      'middle guard',
+      'owner read',
+      'beta sink',
+      'tenant miss',
+      'gamma response',
+      'delta replay',
+      'epsilon proof',
+      'final impact'
+    ];
+    const events = fixture.history.findings
+      .filter((event) => event.fingerprint === 'invoice-fingerprint')
+      .sort((left, right) => left.observedAt.localeCompare(right.observedAt));
+    for (const event of events) event.finding.attackPath = [];
+    events.at(-1)!.finding.attackPath = orderedSteps;
+
+    const output = await writeVaultNotes(fixture);
+    const finding = await readFile(
+      output.findings.find((file) => path.basename(file) === 'invoice-fingerprint.md')!,
+      'utf8'
+    );
+    const attackPath = finding.split('## Attack Path')[1]!.split('## Invariants')[0]!;
+
+    expect(attackPath).toContain(
+      orderedSteps.map((step, index) => `- ${index + 1}. ${step}`).join('\n')
+    );
+  });
+
+  test('writes patch nodes without note paths to distinct deterministic notes', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const patchesWithoutPaths = fixture.graph.nodes.filter(
+      (node) => node.type === 'patch' && !node.notePath
+    );
+    expect(patchesWithoutPaths.length).toBeGreaterThan(0);
+
+    const output = await writeVaultNotes(fixture);
+    const summary = await readFile(output.summaryPath, 'utf8');
+
+    for (const node of patchesWithoutPaths) {
+      const fallbackName = `${safeSlug(node.id)}.md`;
+      const note = output.patches.find((file) => path.basename(file) === fallbackName);
+      expect(note).toBeDefined();
+      expect(await readFile(note!, 'utf8')).toContain(node.label);
+      expect(summary).toContain(`.breachproof/vault/patches/${fallbackName}`);
+    }
+    expect(new Set(output.patches.map((file) => path.basename(file))).size).toBe(
+      output.patches.length
+    );
+  });
+
+  test('escapes artifact link labels so Markdown delimiters cannot terminate them', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const testNode = fixture.graph.nodes.find((node) => node.type === 'test')!;
+    testNode.label = String.raw`bad\](/malicious)[tail]`;
+
+    const output = await writeVaultNotes(fixture);
+    const finding = await readFile(
+      output.findings.find((file) => path.basename(file) === 'invoice-fingerprint.md')!,
+      'utf8'
+    );
+    const linkLine = finding
+      .split('\n')
+      .find((line) => line.includes('reports/evidence/generated-id/regression.test.ts'))!;
+
+    expect(linkLine).not.toContain('](/malicious)');
+    expect(linkLine).toContain(String.raw`bad\\\]\(/malicious\)\[tail\]`);
+  });
+
+  test('uses the newest finding event when graph node IDs sort in the opposite order', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const events = fixture.history.findings
+      .filter((event) => event.fingerprint === 'invoice-fingerprint')
+      .sort((left, right) => left.observedAt.localeCompare(right.observedAt));
+    const newestEvent = events.at(-1)!;
+    newestEvent.finding.title = 'Newest finding title';
+    newestEvent.finding.severity = 'critical';
+    const newestNode = fixture.graph.nodes.find(
+      (node) => node.id === `finding:${newestEvent.id}`
+    )!;
+    newestNode.label = 'Newest finding title';
+    newestNode.status = 'newest-lifecycle';
+    newestNode.severity = 'critical';
+    const staleNode = fixture.graph.nodes.find(
+      (node) =>
+        node.type === 'finding' &&
+        node.notePath === newestNode.notePath &&
+        node.id !== newestNode.id
+    )!;
+    const staleId = staleNode.id;
+    staleNode.id = 'finding:zzzz-stale';
+    staleNode.label = 'Stale lexicographic title';
+    staleNode.status = 'stale-status';
+    staleNode.severity = 'low';
+    fixture.graph.edges = fixture.graph.edges.map((edge) => ({
+      ...edge,
+      from: edge.from === staleId ? staleNode.id : edge.from,
+      to: edge.to === staleId ? staleNode.id : edge.to
+    }));
+
+    const output = await writeVaultNotes(fixture);
+    const finding = await readFile(
+      output.findings.find((file) => path.basename(file) === 'invoice-fingerprint.md')!,
+      'utf8'
+    );
+
+    expect(finding).toContain('title: Newest finding title');
+    expect(finding).toContain('status: newest-lifecycle');
+    expect(finding).toContain('severity: critical');
+    expect(finding).toContain('# Newest finding title');
+    expect(finding).not.toContain('title: Stale lexicographic title');
+  });
+
+  test('renders unavailable controls for graph routes absent from the system map', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    fixture.graph.nodes.push({
+      id: 'route:detached-route',
+      type: 'route',
+      label: 'POST /api/detached',
+      status: 'unknown',
+      route: 'POST /api/detached',
+      notePath: '.breachproof/vault/routes/detached-route.md',
+      profilePath: 'reports/vault/route-profiles/detached-route.html',
+      metadata: { file: 'app/api/detached/route.ts' }
+    });
+
+    const output = await writeVaultNotes(fixture);
+    const route = await readFile(
+      output.routes.find((file) => path.basename(file) === 'detached-route.md')!,
+      'utf8'
+    );
+
+    expect(route).toContain('Authentication detected: unavailable');
+    expect(route).toContain('Ownership check detected: unavailable');
+    expect(route).toContain('Tenant scoping status: unavailable');
+    expect(route).toContain('Upload validation: unavailable');
+    expect(route).toContain('Webhook signature verification: unavailable');
+    expect(route).not.toContain('Authentication detected: no');
+    expect(route).not.toContain('Tenant scoping status: not detected');
+  });
+
+  test('builds fixture graphs from the same relocated workspace as their artifacts', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = vaultFixture(workspace);
+    const relocatedInput = relocatedGraphInputFixture(workspace);
+
+    expect(fixture.systemMap.workspace).toBe(workspace);
+    expect(fixture.graph).toEqual(buildVaultGraph(relocatedInput));
+  });
 });
 
 describe('Vault redaction', () => {
@@ -235,6 +396,21 @@ describe('Vault redaction', () => {
     );
     expect(safeSlug('\u6771\u4eac \ud83d\udd10')).toBe('item');
     expect(safeSlug('A_B.C')).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  test('redacts only exact workspace boundaries, not longer path prefixes', () => {
+    const workspace = '/repo/project';
+
+    expect(redactVaultText(workspace, workspace)).toBe('<workspace>');
+    expect(redactVaultText(`${workspace}/file.ts`, workspace)).toBe(
+      '<workspace>/file.ts'
+    );
+    expect(redactVaultText(`${workspace}\\file.ts`, workspace)).toBe(
+      '<workspace>\\file.ts'
+    );
+    expect(redactVaultText(`${workspace}-copy/file.ts`, workspace)).toBe(
+      `${workspace}-copy/file.ts`
+    );
   });
 });
 
@@ -271,5 +447,51 @@ describe('Vault route profiles', () => {
     expect(html).toContain('No connected AI tools.');
     expect(html).not.toContain('<script');
     expect(html).not.toContain('src="http');
+  });
+
+  test('preserves chronological verification order and repeated entries', async () => {
+    const workspace = await temporaryWorkspace();
+    const fixture = routeProfileFixture(workspace);
+    const sourceEvent = fixture.history.findings.find(
+      (event) => event.fingerprint === 'invoice-fingerprint'
+    )!;
+    const repeatedEvent = {
+      ...sourceEvent,
+      id: 'finding-repeat-a',
+      runId: 'day-5',
+      observedAt: '2026-06-06T10:00:00.000Z',
+      verificationStatus: 'passed' as const,
+      finding: {
+        ...sourceEvent.finding,
+        validation: {
+          ...sourceEvent.finding.validation,
+          summary: 'Zulu repeated verification'
+        }
+      }
+    };
+    fixture.history.findings.push(repeatedEvent, {
+      ...repeatedEvent,
+      id: 'finding-repeat-b'
+    });
+    fixture.history.findings.push({
+      ...repeatedEvent,
+      id: 'finding-later',
+      observedAt: '2026-06-07T10:00:00.000Z',
+      finding: {
+        ...repeatedEvent.finding,
+        validation: {
+          ...repeatedEvent.finding.validation,
+          summary: 'Alpha later verification'
+        }
+      }
+    });
+
+    const html = renderRouteProfile(fixture);
+    const repeated =
+      '2026-06-06T10:00:00.000Z - passed: Zulu repeated verification';
+    const later = '2026-06-07T10:00:00.000Z - passed: Alpha later verification';
+
+    expect(html.split(repeated)).toHaveLength(3);
+    expect(html.indexOf(repeated)).toBeLessThan(html.indexOf(later));
   });
 });
