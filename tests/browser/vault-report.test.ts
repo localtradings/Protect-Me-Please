@@ -44,6 +44,7 @@ test('renders the approved graph shell and focuses evidence', async ({ page }) =
 
   await expect(page.getByText('BREACHPROOF VAULT')).toBeVisible();
   await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.locator('.vault-scene')).toHaveAttribute('data-camera-framed', 'true');
   await page.getByRole('button', { name: 'Breach paths' }).click();
   await expect(page.getByRole('button', { name: 'Breach paths' })).toHaveAttribute(
     'aria-pressed',

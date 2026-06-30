@@ -659,7 +659,12 @@ export function startVaultGraph(root: HTMLElement, graphInput: VaultGraph): Vaul
 
   let mode: VaultGraphMode = 'global';
   let depth = 2;
-  let selectedNodeId = graph.nodes.find((node) => node.status === 'reopened')?.id;
+  let selectedNodeId =
+    graph.nodes.find((node) => node.status === 'reopened')?.id ??
+    graph.nodes.find(
+      (node) => node.type === 'finding' && node.runId === graph.currentRunId
+    )?.id ??
+    graph.nodes.find((node) => node.type === 'finding')?.id;
   let rangeFrom = '';
   let rangeTo = '';
   let severityFilter = 'all';
@@ -668,6 +673,7 @@ export function startVaultGraph(root: HTMLElement, graphInput: VaultGraph): Vaul
   let timelineIndex = 0;
   let destroyed = false;
   let cameraInteracted = false;
+  let engineTick = 0;
   const excludedNodeTypes = new Set<VaultNodeType>();
   const excludedEdgeTypes = new Set<VaultEdgeType>();
   let visibleNodeIds = new Set(graph.nodes.map((node) => node.id));
@@ -727,6 +733,12 @@ export function startVaultGraph(root: HTMLElement, graphInput: VaultGraph): Vaul
     .warmupTicks(80)
     .cooldownTicks(180)
     .onNodeClick((node) => selectNode(node.id))
+    .onEngineTick(() => {
+      engineTick += 1;
+      if (!cameraInteracted && (engineTick === 1 || engineTick % 20 === 0)) {
+        frameVisibleGraph(0);
+      }
+    })
     .onEngineStop(() => {
       if (!cameraInteracted) frameVisibleGraph(350);
     })
@@ -968,6 +980,7 @@ export function startVaultGraph(root: HTMLElement, graphInput: VaultGraph): Vaul
       center,
       duration
     );
+    ui.scene.dataset.cameraFramed = 'true';
   }
 
   const resize = (): void => {

@@ -7,14 +7,14 @@ export interface VaultNodeVisualStyle {
 }
 
 const NODE_STYLES: Record<VaultNodeType, VaultNodeVisualStyle> = {
-  route: { color: '#62cfff', emissive: '#0b6f96', scale: 1.9 },
-  finding: { color: '#ff5964', emissive: '#a80f24', scale: 2.3 },
-  invariant: { color: '#f4bd62', emissive: '#8a510d', scale: 1.85 },
-  patch: { color: '#65e6b5', emissive: '#16785d', scale: 1.75 },
-  replay: { color: '#b78cff', emissive: '#5d2ca2', scale: 1.65 },
-  test: { color: '#d8fff4', emissive: '#247d67', scale: 1.3 },
-  asset: { color: '#cceaff', emissive: '#216c9a', scale: 2.8 },
-  run: { color: '#89939f', emissive: '#303945', scale: 1.1 }
+  route: { color: '#62cfff', emissive: '#0b6f96', scale: 4.4 },
+  finding: { color: '#ff5964', emissive: '#a80f24', scale: 5.4 },
+  invariant: { color: '#f4bd62', emissive: '#8a510d', scale: 4.2 },
+  patch: { color: '#65e6b5', emissive: '#16785d', scale: 3.6 },
+  replay: { color: '#b78cff', emissive: '#5d2ca2', scale: 3.4 },
+  test: { color: '#d8fff4', emissive: '#247d67', scale: 2.6 },
+  asset: { color: '#cceaff', emissive: '#216c9a', scale: 6.8 },
+  run: { color: '#89939f', emissive: '#303945', scale: 2.2 }
 };
 
 const EDGE_COLORS: Record<VaultEdgeType, string> = {
@@ -50,15 +50,15 @@ export function edgeWidth(edge: Pick<VaultEdge, 'type'>): number {
   switch (edge.type) {
     case 'violates':
     case 'reaches':
-      return 1.7;
+      return 2.2;
     case 'fixed_by':
     case 'similar_to':
-      return 1.2;
+      return 1.6;
     case 'verified_by':
     case 'protects':
-      return 0.8;
+      return 1.1;
     default:
-      return 0.35;
+      return 0.55;
   }
 }
 
