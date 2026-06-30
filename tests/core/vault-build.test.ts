@@ -49,4 +49,21 @@ describe('Vault UI build pipeline', () => {
     expect(config).toContain("include: ['tests/core/**/*.test.ts']");
     expect(config).not.toContain("include: ['tests/**/*.test.ts']");
   });
+
+  test('documents renderer licenses and uploads the local Vault report', async () => {
+    const notices = await readFile(
+      path.join(repositoryRoot, 'THIRD_PARTY_NOTICES.md'),
+      'utf8'
+    );
+    const workflow = await readFile(
+      path.join(repositoryRoot, '.github/workflows/ci.yml'),
+      'utf8'
+    );
+
+    expect(notices).toContain('three');
+    expect(notices).toContain('3d-force-graph');
+    expect(notices).toContain('MIT');
+    expect(workflow).toContain('reports/vault/');
+    expect(workflow).toContain('npx playwright install --with-deps chromium');
+  });
 });

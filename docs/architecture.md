@@ -16,9 +16,25 @@ BreachProof is organized as a set of deterministic local agents.
 12. Patch Tournament Agent writes multiple candidate fixes, scorecards, and a recommended patch.
 13. Verification Agent records replay status against the original attack path or invariant.
 14. Report Agent renders Markdown, JSON, SARIF, and static HTML.
+15. Vault Projector records append-only security memory and renders Markdown notes, route profiles, lifecycle JSON, and the offline 3D graph.
 
 The default workflow is:
 
 ```text
-approve scope -> map -> corpus -> reachability -> range -> invariants -> evidence -> patch tournament -> verification -> final report
+approve scope -> map -> corpus -> reachability -> range -> invariants -> evidence -> patch tournament -> verification -> final report -> Vault projection
 ```
+
+## Vault Projection
+
+Vault is a projection of artifacts already produced by the defensive workflow. The workflow sends the system map, findings, invariant results, patch summary, patch tournament, verification, and local replay-evidence summary through one orchestration boundary. That boundary:
+
+1. computes stable finding fingerprints and a deterministic run identity
+2. appends the run, finding, patch, and replay events to local SQLite
+3. reads the complete local history
+4. projects lifecycle events, similar findings, and verified patch memory
+5. writes Markdown memory under `.breachproof/vault/`
+6. writes the offline report under `reports/vault/`
+
+The SQLite tables `vault_runs`, `vault_finding_events`, `vault_patch_events`, and `vault_replay_events` use insert-or-ignore event identities. Vault rebuilds are read-only projections and do not insert another run.
+
+The report embeds schema-validated graph JSON with characters escaped for safe HTML script embedding. JavaScript and CSS are copied into the report; the content security policy denies network connections and remote runtime assets. Three.js node meshes and canvas sprites are generated procedurally by first-party code. If WebGL is unavailable, the same graph is rendered as an accessible semantic table and timeline.

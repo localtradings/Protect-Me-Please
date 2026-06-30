@@ -22,9 +22,11 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:browser
       - run: npm run build
       - run: node dist/cli/index.js doctor
       - run: node dist/cli/index.js ci
@@ -46,6 +48,7 @@ jobs:
             reports/final-report.sarif
             reports/evidence-summary.json
             reports/patch-tournament.json
+            reports/vault/
       - uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('reports/final-report.sarif') != ''
         with:

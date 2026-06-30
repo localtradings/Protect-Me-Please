@@ -8,6 +8,7 @@ coverage/
 .env.*
 !.env.example
 .breachproof/
+.breachproof/vault/
 breachproof.scope.yml
 reports/*.json
 reports/*.sarif
@@ -15,6 +16,7 @@ reports/*.md
 reports/*.html
 reports/evidence/
 reports/patches/
+reports/vault/
 !reports/README.md
 *.log
 *.sqlite
