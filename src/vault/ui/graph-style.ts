@@ -8,6 +8,12 @@ export interface VaultNodeVisualStyle {
 
 const NODE_STYLES: Record<VaultNodeType, VaultNodeVisualStyle> = {
   route: { color: '#62cfff', emissive: '#0b6f96', scale: 4.4 },
+  model: { color: '#72d6ff', emissive: '#176f94', scale: 4.1 },
+  auth_gate: { color: '#f4bd62', emissive: '#8a510d', scale: 4.2 },
+  ai_tool: { color: '#d59bff', emissive: '#663098', scale: 4.0 },
+  webhook: { color: '#ff9f7a', emissive: '#963d24', scale: 3.8 },
+  upload: { color: '#80e5d1', emissive: '#197565', scale: 3.8 },
+  file: { color: '#b7c5d8', emissive: '#42536a', scale: 2.5 },
   finding: { color: '#ff5964', emissive: '#a80f24', scale: 5.4 },
   invariant: { color: '#f4bd62', emissive: '#8a510d', scale: 4.2 },
   patch: { color: '#65e6b5', emissive: '#16785d', scale: 3.6 },

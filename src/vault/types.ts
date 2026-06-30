@@ -12,6 +12,12 @@ import {
 export const vaultNodeTypeSchema = z.enum([
   'run',
   'route',
+  'model',
+  'auth_gate',
+  'ai_tool',
+  'webhook',
+  'upload',
+  'file',
   'finding',
   'invariant',
   'patch',
@@ -137,7 +143,7 @@ export type VaultGraphSummary = z.infer<typeof vaultGraphSummarySchema>;
 
 export const vaultGraphSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     generatedAt: z.string().datetime(),
     project: z.string().min(1),
     currentRunId: z.string().min(1),

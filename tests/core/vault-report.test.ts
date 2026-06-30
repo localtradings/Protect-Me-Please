@@ -238,7 +238,7 @@ describe('offline Vault report', () => {
     expect(graph).toEqual(graphBefore);
     expect(routeProfiles).toEqual(routeProfilesBefore);
 
-    const invalidGraph = { ...graph, schemaVersion: 2 } as unknown as VaultGraph;
+    const invalidGraph = { ...graph, schemaVersion: 1 } as unknown as VaultGraph;
     const invalidWorkspace = await temporaryWorkspace();
     await expect(
       writeVaultReport({

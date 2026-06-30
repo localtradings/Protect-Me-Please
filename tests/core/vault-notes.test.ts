@@ -127,7 +127,7 @@ describe('Vault Markdown memory', () => {
     expect(finding).toContain(
       '](../../../reports/evidence/generated-id/regression.test.ts)'
     );
-    expect(output.routes).toHaveLength(1);
+    expect(output.routes).toHaveLength(systemMap.routes.length);
     expect(output.invariants).toHaveLength(1);
     expect(output.runs.length).toBeGreaterThan(0);
     expect(output.daily.length).toBeGreaterThan(0);

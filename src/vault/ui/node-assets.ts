@@ -171,6 +171,18 @@ function geometryFor(node: VaultNode): { geometry: THREE.BufferGeometry; glyph: 
       geometry.rotateX(Math.PI / 2);
       return { geometry, glyph: 'route' };
     }
+    case 'model':
+      return { geometry: new THREE.CylinderGeometry(0.82, 0.82, 0.55, 12), glyph: 'asset' };
+    case 'auth_gate':
+      return { geometry: new THREE.OctahedronGeometry(0.9), glyph: 'shield' };
+    case 'ai_tool':
+      return { geometry: new THREE.IcosahedronGeometry(0.82), glyph: 'link' };
+    case 'webhook':
+      return { geometry: new THREE.TorusGeometry(0.62, 0.2, 8, 18), glyph: 'link' };
+    case 'upload':
+      return { geometry: new THREE.ConeGeometry(0.78, 1.25, 8), glyph: 'asset' };
+    case 'file':
+      return { geometry: new THREE.BoxGeometry(0.72, 0.94, 0.18), glyph: 'test' };
     case 'finding': {
       const geometry = new THREE.CylinderGeometry(0.82, 0.82, 0.55, 6, 1, false);
       geometry.rotateX(Math.PI / 2);

@@ -48,6 +48,7 @@ export function renderHtmlReport(report: ProtectReport, extras: HtmlReportExtras
       item.directory
     ]) ?? [];
   const verificationRows = report.verification.items.map((item) => [item.findingId, item.status, item.proofMode, item.summary]);
+  const projectCheckRows = report.projectVerification?.checks.map((item) => [item.name, item.status, item.command.join(' '), item.summary, item.logPath]) ?? [];
   const bolaRows =
     extras.ownershipTraces?.map((trace) => [trace.findingId, trace.route, trace.source, trace.sink, trace.missingPredicate]) ?? [];
 
@@ -211,6 +212,14 @@ export function renderHtmlReport(report: ProtectReport, extras: HtmlReportExtras
       <table>
         <thead><tr><th>Finding</th><th>Status</th><th>Proof Mode</th><th>Summary</th></tr></thead>
         <tbody>${rows(verificationRows)}</tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Project Checks</h2>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Command</th><th>Summary</th><th>Log</th></tr></thead>
+        <tbody>${rows(projectCheckRows)}</tbody>
       </table>
     </section>
 

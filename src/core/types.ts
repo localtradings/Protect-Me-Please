@@ -355,6 +355,52 @@ export const verificationSchema = z.object({
 
 export type Verification = z.infer<typeof verificationSchema>;
 
+export const fixDispositionSchema = z.enum(['auto_fixed', 'review_patch', 'manual_review']);
+export type FixDisposition = z.infer<typeof fixDispositionSchema>;
+
+export const projectVerificationStatusSchema = z.enum(['passed', 'failed', 'skipped', 'timed_out']);
+export type ProjectVerificationStatus = z.infer<typeof projectVerificationStatusSchema>;
+
+export const projectVerificationCheckSchema = z.object({
+  name: z.string().min(1),
+  ecosystem: z.enum(['node', 'python', 'go', 'rust']),
+  command: z.array(z.string()).min(1),
+  status: projectVerificationStatusSchema,
+  exitCode: z.number().int().nullable(),
+  durationMs: z.number().int().nonnegative(),
+  logPath: z.string().min(1),
+  summary: z.string().min(1)
+});
+export type ProjectVerificationCheck = z.infer<typeof projectVerificationCheckSchema>;
+
+export const projectVerificationSummarySchema = z.object({
+  generatedAt: z.string().datetime(),
+  checks: z.array(projectVerificationCheckSchema),
+  summary: z.object({
+    passed: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    timedOut: z.number().int().nonnegative()
+  })
+});
+export type ProjectVerificationSummary = z.infer<typeof projectVerificationSummarySchema>;
+
+export const automationSummarySchema = z.object({
+  generatedAt: z.string().datetime(),
+  systemMap: z.object({
+    routes: z.number().int().nonnegative(), models: z.number().int().nonnegative(),
+    authGates: z.number().int().nonnegative(), webhooks: z.number().int().nonnegative(),
+    uploads: z.number().int().nonnegative(), aiTools: z.number().int().nonnegative()
+  }),
+  fixes: z.object({ autoFixed: z.number().int().nonnegative(), reviewPatches: z.number().int().nonnegative(), manualReview: z.number().int().nonnegative() }),
+  findingVerification: z.object({ verifiedFixed: z.number().int().nonnegative(), notVerified: z.number().int().nonnegative() }),
+  lifecycle: z.object({ new: z.number().int().nonnegative(), repeated: z.number().int().nonnegative(), fixed: z.number().int().nonnegative(), reopened: z.number().int().nonnegative(), notObserved: z.number().int().nonnegative() }),
+  projectChecks: z.object({ passed: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), skipped: z.number().int().nonnegative(), timedOut: z.number().int().nonnegative() }),
+  outputs: z.object({ markdown: z.string(), html: z.string(), json: z.string(), sarif: z.string(), summary: z.string(), vault: z.string() }),
+  rescan: z.object({ status: z.literal('skipped'), reason: z.string().min(1) })
+});
+export type AutomationSummary = z.infer<typeof automationSummarySchema>;
+
 export const reportSchema = z.object({
   product: z.literal(productName),
   tagline: z.literal(productTagline),
@@ -371,6 +417,7 @@ export const reportSchema = z.object({
   evidence: evidenceBundleSchema,
   patchSummary: patchSummarySchema,
   verification: verificationSchema,
+  projectVerification: projectVerificationSummarySchema.optional(),
   findings: z.array(findingSchema)
 });
 

@@ -22,8 +22,11 @@ import { appendAuditEvent } from './audit.js';
 import { writeScopeConfig } from './config.js';
 import { approveScope, approvalMatchesConfig, computeScopeHash, loadApproval } from './scope.js';
 import { initializeStateStore, recordRun } from './state.js';
-import type { Finding, PatchSummary, ProtectMode, ScopeConfig, Verification } from './types.js';
+import type { Finding, PatchSummary, ProjectVerificationSummary, ProtectMode, ScopeConfig, SystemMap, Verification } from './types.js';
 import { recordAndBuildVault } from '../vault/report.js';
+import type { VaultGraph } from '../vault/types.js';
+import { classifyFixDispositions, type FindingFixDisposition } from './fix-policy.js';
+import { runProjectVerification } from './project-verification.js';
 
 export interface RunAutonomousWorkflowInput {
   workspace: string;
@@ -31,6 +34,7 @@ export interface RunAutonomousWorkflowInput {
   yes?: boolean;
   apply?: boolean;
   mode?: ProtectMode;
+  verifyProject?: boolean;
 }
 
 export interface RunAutonomousWorkflowResult {
@@ -38,6 +42,10 @@ export interface RunAutonomousWorkflowResult {
   patchSummary: PatchSummary;
   verification: Verification;
   findingsCount: number;
+  systemMap: SystemMap;
+  projectVerification?: ProjectVerificationSummary;
+  fixDispositions: FindingFixDisposition[];
+  vaultGraph: VaultGraph;
 }
 
 async function writeJson(file: string, value: unknown): Promise<string> {
@@ -113,6 +121,10 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
   });
   const patchTournament = await generatePatchTournament({ workspace, reportsDir: config.reportsDir, findings });
   const verification = createVerification(findings, patchSummary);
+  const fixDispositions = classifyFixDispositions(findings, patchSummary);
+  const projectVerification = input.verifyProject
+    ? await runProjectVerification({ workspace, reportsDir: config.reportsDir })
+    : undefined;
   const evidenceArtifacts = await writeReplayableEvidenceArtifacts({
     workspace,
     reportsDir: config.reportsDir,
@@ -141,6 +153,7 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
     evidence,
     patchSummary,
     verification,
+    projectVerification,
     scopeApproved: true
   });
 
@@ -159,6 +172,9 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
     await writeJson(path.join(reportsDir, 'patch-summary.json'), patchSummary),
     await writeJson(path.join(reportsDir, 'patch-tournament.json'), patchTournament),
     await writeJson(path.join(reportsDir, 'verification.json'), verification),
+    ...(projectVerification
+      ? [await writeJson(path.join(reportsDir, 'project-verification.json'), projectVerification)]
+      : []),
     await writeJson(path.join(reportsDir, 'range-summary.json'), rangeSummary),
     await writeJson(path.join(reportsDir, 'vibe-audit.json'), vibeAudit),
     await writeText(path.join(reportsDir, 'vibe-audit.md'), renderVibeAuditMarkdown(vibeAudit)),
@@ -178,6 +194,7 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
     )
   ];
 
+  let vaultGraph: VaultGraph | undefined;
   try {
     const vault = await recordAndBuildVault({
       workspace,
@@ -194,6 +211,7 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
       startedAt: systemMap.generatedAt,
       completedAt: report.generatedAt
     });
+    vaultGraph = vault.graph;
     artifacts.push(...vault.paths);
     recordRun(db, { command: 'run', mode: config.mode, status: 'completed' });
   } finally {
@@ -207,5 +225,16 @@ export async function runAutonomousWorkflow(input: RunAutonomousWorkflowInput): 
     message: `BreachProof autonomous workflow completed with ${findings.length} findings`
   });
 
-  return { artifacts, patchSummary, verification, findingsCount: findings.length };
+  if (!vaultGraph) throw new Error('Vault graph was not generated.');
+
+  return {
+    artifacts,
+    patchSummary,
+    verification,
+    findingsCount: findings.length,
+    systemMap,
+    projectVerification,
+    fixDispositions,
+    vaultGraph
+  };
 }

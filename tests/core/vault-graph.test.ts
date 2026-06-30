@@ -9,7 +9,7 @@ import {
   makeSnapshot
 } from '../helpers/vault-fixtures.js';
 
-const nodeTypes = ['asset', 'finding', 'invariant', 'patch', 'replay', 'route', 'run', 'test'];
+const nodeTypes = ['ai_tool', 'asset', 'auth_gate', 'file', 'finding', 'invariant', 'model', 'patch', 'replay', 'route', 'run', 'test', 'upload', 'webhook'];
 const edgeTypes = [
   'affects',
   'fixed_by',
@@ -25,12 +25,12 @@ const edgeTypes = [
 ];
 
 describe('Vault graph projection', () => {
-  test('emits every supplied node and evidence-backed edge type as schema version 1', () => {
+  test('emits every supplied node and evidence-backed edge type as schema version 2', () => {
     const graph = buildVaultGraph(makeGraphInput());
 
     expect([...new Set(graph.nodes.map((node) => node.type))].sort()).toEqual(nodeTypes);
     expect([...new Set(graph.edges.map((edge) => edge.type))].sort()).toEqual(edgeTypes);
-    expect(graph.schemaVersion).toBe(1);
+    expect(graph.schemaVersion).toBe(2);
     expect(graph.timeline.map((event) => event.lifecycle)).toEqual(
       expect.arrayContaining(['new', 'repeated', 'fixed', 'reopened'])
     );

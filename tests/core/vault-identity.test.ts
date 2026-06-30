@@ -408,6 +408,12 @@ describe('Vault graph contracts', () => {
     expect(vaultNodeTypeSchema.options).toEqual([
       'run',
       'route',
+      'model',
+      'auth_gate',
+      'ai_tool',
+      'webhook',
+      'upload',
+      'file',
       'finding',
       'invariant',
       'patch',
@@ -437,9 +443,9 @@ describe('Vault graph contracts', () => {
     ]);
   });
 
-  test('parses schema version 1 and applies collection defaults', () => {
+  test('parses schema version 2 and applies collection defaults', () => {
     const parsed = vaultGraphSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: '2026-06-28T00:00:00.000Z',
       project: 'breachproof',
       currentRunId: 'run-1',
@@ -492,7 +498,7 @@ describe('Vault graph contracts', () => {
 
   test('requires score and signals for similar_to edges while preserving defaults for other edges', () => {
     const graph = vaultGraphSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: '2026-06-28T00:00:00.000Z',
       project: 'breachproof',
       currentRunId: 'run-1',

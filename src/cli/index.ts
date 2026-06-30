@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { Command } from 'commander';
 import { buildAttackGraph } from '../agents/attack-graph.js';
 import { createEvidenceBundle, createValidationPlan } from '../agents/attack-planner.js';
@@ -17,10 +18,11 @@ import { createVerification } from '../agents/verification-agent.js';
 import { buildLocalVulnerabilityCorpus, importVulnerabilityCorpusFromFiles, matchRelevantVulnerabilities, summarizeVulnerabilityCorpus } from '../agents/vulnerability-corpus.js';
 import { appendAuditEvent } from '../core/audit.js';
 import { createDefaultScopeConfig, loadScopeConfig, scopeConfigFile, writeScopeConfig } from '../core/config.js';
-import { approveScope } from '../core/scope.js';
+import { approveScope, approvalMatchesConfig, loadApproval } from '../core/scope.js';
 import { initializeStateStore, recordRun } from '../core/state.js';
 import { type Finding, type ProtectMode, type ScopeConfig, type SystemMap } from '../core/types.js';
 import { runAutonomousWorkflow } from '../core/workflow.js';
+import { renderAutomationSummary, runAutomaticWorkflow } from '../core/automation.js';
 import { replayFindingEvidence } from '../proof/evidence.js';
 import { evaluateInvariants, writeDefaultInvariants } from '../proof/invariants.js';
 import { composeLocalCyberRange } from '../proof/range.js';
@@ -112,6 +114,22 @@ function configureCommonOptions(command: Command): Command {
   return command.option('--scope <file>', 'scope config file', scopeConfigFile).option('--mode <mode>', 'execution mode');
 }
 
+async function authorizeAutomaticRun(context: RuntimeContext, yes = false): Promise<boolean> {
+  if (approvalMatchesConfig(await loadApproval(context.workspace), context.config)) return false;
+  if (yes) return true;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error('Scope is not approved. Rerun with --yes after confirming you own or are authorized to test this workspace.');
+  }
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await terminal.question('Do you own or have explicit authorization to test this workspace? [y/N] ');
+    if (!/^(y|yes)$/i.test(answer.trim())) throw new Error('Authorization declined. No BreachProof run was started.');
+    return true;
+  } finally {
+    terminal.close();
+  }
+}
+
 const program = new Command();
 
 program
@@ -146,21 +164,27 @@ configureCommonOptions(
 
 configureCommonOptions(
   program
-    .command('run')
+    .command('run', { isDefault: true })
     .description('Run the autonomous proof, fix-artifact, verification, and report workflow.')
     .option('--auto', 'run map, corpus, reachability, validate, fix artifacts, verify, and reports')
     .option('--yes', 'approve scope if missing')
     .option('--apply', 'explicitly allow source changes where implemented')
-).action(async (options: { auto?: boolean; yes?: boolean; apply?: boolean; scope?: string; mode?: ProtectMode }) => {
-  const context = await loadContext({ scope: options.scope, mode: options.mode ?? (options.auto ? 'auto' : undefined), apply: options.apply });
-  const result = await runAutonomousWorkflow({
+    .option('--open', 'open the generated local Vault dashboard')
+    .option('--no-verify', 'skip detected project build, lint, and test checks')
+).action(async (options: { auto?: boolean; yes?: boolean; apply?: boolean; open?: boolean; verify?: boolean; scope?: string; mode?: ProtectMode }) => {
+  const context = await loadContext({ scope: options.scope, mode: options.mode ?? 'auto', apply: options.apply });
+  const approved = await authorizeAutomaticRun(context, options.yes);
+  const result = await runAutomaticWorkflow({
     workspace: context.workspace,
     config: context.config,
-    yes: options.yes,
+    yes: approved,
     apply: options.apply ?? false,
-    mode: context.config.mode
+    mode: context.config.mode,
+    verifyProject: options.verify !== false,
+    open: options.open
   });
-  console.log(`BreachProof run completed with ${result.findingsCount} findings. Artifacts written to ${context.config.reportsDir}.`);
+  console.log(renderAutomationSummary(result.summary));
+  if (result.exitCode !== 0) process.exitCode = result.exitCode;
 });
 
 const proof = program.command('proof').description('Proof Mode commands for replayable local evidence.');

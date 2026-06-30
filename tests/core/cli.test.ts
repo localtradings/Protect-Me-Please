@@ -58,7 +58,7 @@ describe('CLI', () => {
     const before = await readFile(invoiceRoute, 'utf8');
 
     try {
-      const output = await runCli(['run', '--auto', '--yes'], workspace);
+      const output = await runCli(['--yes', '--no-verify'], workspace);
       const after = await readFile(invoiceRoute, 'utf8');
       const artifacts = [
         'system-map.json',
@@ -75,17 +75,30 @@ describe('CLI', () => {
         'patch-summary.json',
         'patch-tournament.json',
         'verification.json',
+        'automation-summary.json',
         'final-report.md',
         'final-report.html',
         'final-report.sarif'
       ];
 
       await Promise.all(artifacts.map((artifact) => access(path.join(workspace, 'reports', artifact))));
-      expect(output).toContain('BreachProof run completed');
+      expect(output).toContain('BreachProof automatic run complete');
+      expect(output).toContain('Vault: reports/vault/index.html');
       expect(await runCli(['vault', 'build'], workspace)).toContain('Vault built');
       expect(await runCli(['vault', 'view'], workspace)).toContain('reports/vault/index.html');
       expect(await runCli(['vault', 'timeline'], workspace)).toContain('new');
       expect(after).toBe(before);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('bare noninteractive execution fails closed without approval or --yes', async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), 'bp-cli-unapproved-'));
+    try {
+      await expect(execFileAsync('npx', ['tsx', cliPath], { cwd: workspace })).rejects.toMatchObject({
+        stderr: expect.stringContaining('Scope is not approved')
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

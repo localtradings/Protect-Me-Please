@@ -1,4 +1,4 @@
-import { productName, productTagline, reportSchema, type AttackGraph, type EvidenceBundle, type Finding, type PatchSummary, type ProtectMode, type ProtectReport, type ReachabilityGraph, type SystemMap, type ValidationPlan, type Verification, type VulnerabilityCorpusSummary } from '../core/types.js';
+import { productName, productTagline, reportSchema, type AttackGraph, type EvidenceBundle, type Finding, type PatchSummary, type ProjectVerificationSummary, type ProtectMode, type ProtectReport, type ReachabilityGraph, type SystemMap, type ValidationPlan, type Verification, type VulnerabilityCorpusSummary } from '../core/types.js';
 import { createEvidenceBundle, createValidationPlan } from '../agents/attack-planner.js';
 import { generateEmptyReachabilityGraph } from './report-helpers.js';
 
@@ -14,6 +14,7 @@ export interface ReportInput {
   evidence?: EvidenceBundle;
   patchSummary?: PatchSummary;
   verification?: Verification;
+  projectVerification?: ProjectVerificationSummary;
   scopeApproved?: boolean;
 }
 
@@ -79,6 +80,7 @@ export function createReportModel(input: ReportInput): ProtectReport {
     evidence,
     patchSummary,
     verification,
+    projectVerification: input.projectVerification,
     findings: input.findings
   });
 }
@@ -152,6 +154,10 @@ ${report.patchSummary.items.map((item) => `- ${item.findingId}: ${item.status}${
 ## Verification results
 
 ${report.verification.items.map((item) => `- ${item.findingId}: ${item.status} - ${item.summary}`).join('\n') || '- none'}
+
+## Project checks
+
+${report.projectVerification?.checks.map((item) => `- ${item.name}: ${item.status} - ${item.summary} (${item.logPath})`).join('\n') || '- skipped'}
 
 ## Remaining risk and manual review
 

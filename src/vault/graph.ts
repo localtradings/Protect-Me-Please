@@ -362,6 +362,21 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   }
 
   const routeNodes = new Map<string, VaultNode>();
+  const fileNodes = new Map<string, VaultNode>();
+  const addFileNode = (file: string): VaultNode => {
+    const relative = safeRelativePath(file, workspace);
+    const existing = fileNodes.get(relative);
+    if (existing) return existing;
+    const node = addNode({
+      id: `file:${relative}`,
+      type: 'file',
+      label: path.posix.basename(relative),
+      status: 'mapped',
+      metadata: { path: relative }
+    });
+    fileNodes.set(relative, node);
+    return node;
+  };
   for (const route of [...input.systemMap.routes].sort((left, right) => left.id.localeCompare(right.id))) {
     const routeNode = addNode({
       id: `route:${route.id}`,
@@ -379,6 +394,91 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
       }
     });
     routeNodes.set(route.id, routeNode);
+    const fileNode = addFileNode(route.file);
+    addEdge({
+      from: routeNode.id,
+      to: fileNode.id,
+      type: 'observed_in',
+      label: 'implemented in',
+      evidence: route.sourceSummary,
+      artifactPaths: [route.file]
+    });
+    if (/webhook/i.test(route.path)) {
+      const webhook = addNode({
+        id: `webhook:${route.id}`,
+        type: 'webhook',
+        label: routeLabel(route.method, route.path),
+        status: route.webhookSignatureDetected ? 'protected' : 'review',
+        metadata: { signatureDetected: String(route.webhookSignatureDetected) }
+      });
+      addEdge({ from: webhook.id, to: routeNode.id, type: 'reaches', label: 'enters', evidence: route.sourceSummary, artifactPaths: [route.file] });
+    }
+    if (/upload/i.test(route.path)) {
+      const upload = addNode({
+        id: `upload:${route.id}`,
+        type: 'upload',
+        label: routeLabel(route.method, route.path),
+        status: route.uploadValidationDetected ? 'protected' : 'review',
+        metadata: { validationDetected: String(route.uploadValidationDetected) }
+      });
+      addEdge({ from: upload.id, to: routeNode.id, type: 'reaches', label: 'enters', evidence: route.sourceSummary, artifactPaths: [route.file] });
+    }
+  }
+
+  const modelNodes = new Map<string, VaultNode>();
+  for (const model of [...input.systemMap.dataModels].sort((left, right) => left.name.localeCompare(right.name) || left.file.localeCompare(right.file))) {
+    const relative = safeRelativePath(model.file, workspace);
+    const node = addNode({
+      id: `model:${stableSlug(model.name)}:${stableSlug(relative)}`,
+      type: 'model',
+      label: model.name,
+      status: 'mapped',
+      metadata: { fields: model.fields.join(', '), file: relative }
+    });
+    modelNodes.set(model.name, node);
+    const fileNode = addFileNode(model.file);
+    addEdge({ from: node.id, to: fileNode.id, type: 'observed_in', label: 'defined in', evidence: `${model.name} is defined with ${model.fields.length} mapped fields.`, artifactPaths: [model.file] });
+  }
+  for (const route of input.systemMap.routes) {
+    const routeNode = routeNodes.get(route.id);
+    if (!routeNode) continue;
+    for (const modelName of route.prismaModels) {
+      const modelNode = modelNodes.get(modelName);
+      if (!modelNode) continue;
+      addEdge({ from: routeNode.id, to: modelNode.id, type: 'reaches', label: 'accesses', evidence: `${routeLabel(route.method, route.path)} references ${modelName}.`, artifactPaths: [route.file, input.systemMap.dataModels.find((model) => model.name === modelName)?.file] });
+    }
+  }
+
+  for (const auth of [...input.systemMap.authBoundaries].sort((left, right) => left.routeId.localeCompare(right.routeId))) {
+    const routeNode = routeNodes.get(auth.routeId);
+    if (!routeNode) continue;
+    const node = addNode({
+      id: `auth_gate:${stableSlug(auth.routeId)}:${stableSlug(auth.mechanism)}`,
+      type: 'auth_gate',
+      label: auth.mechanism,
+      status: 'detected',
+      metadata: { file: safeRelativePath(auth.file, workspace), routeId: auth.routeId }
+    });
+    const fileNode = addFileNode(auth.file);
+    addEdge({ from: node.id, to: routeNode.id, type: 'protects', label: 'protects', evidence: `${auth.mechanism} protects ${routeNode.label}.`, artifactPaths: [auth.file, input.systemMap.routes.find((route) => route.id === auth.routeId)?.file] });
+    addEdge({ from: node.id, to: fileNode.id, type: 'observed_in', label: 'implemented in', evidence: `${auth.mechanism} was mapped from source.`, artifactPaths: [auth.file] });
+  }
+
+  for (const tool of [...input.systemMap.aiToolCalls].sort((left, right) => left.name.localeCompare(right.name) || left.file.localeCompare(right.file))) {
+    const node = addNode({
+      id: `ai_tool:${stableSlug(tool.name)}:${stableSlug(safeRelativePath(tool.file, workspace))}`,
+      type: 'ai_tool',
+      label: tool.name,
+      status: tool.guardrailsDetected ? 'protected' : 'review',
+      metadata: { dangerous: String(tool.dangerous), guardrailsDetected: String(tool.guardrailsDetected) }
+    });
+    const fileNode = addFileNode(tool.file);
+    addEdge({ from: node.id, to: fileNode.id, type: 'observed_in', label: 'implemented in', evidence: `${tool.name} was mapped from source.`, artifactPaths: [tool.file] });
+    const route = input.systemMap.routes.find((candidate) => tool.routePath === candidate.path);
+    const routeNode = route ? routeNodes.get(route.id) : undefined;
+    if (route && routeNode) {
+      addEdge({ from: routeNode.id, to: node.id, type: 'reaches', label: 'invokes', evidence: `${routeLabel(route.method, route.path)} can invoke ${tool.name}.`, artifactPaths: [route.file, tool.file] });
+    }
   }
 
   const occurrences: FindingOccurrence[] = [];
@@ -913,7 +1013,7 @@ export function buildVaultGraph(input: BuildVaultGraphInput): VaultGraph {
   }
 
   return vaultGraphSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: generatedAt(input),
     project: safeText(input.project, workspace),
     currentRunId: input.currentRunId,

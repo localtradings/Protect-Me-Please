@@ -301,11 +301,23 @@ export function makeGraphInput(): BuildVaultGraphInput {
         webhookSignatureDetected: false,
         uploadValidationDetected: false,
         sourceSummary: 'Authenticated invoice route without a tenant predicate.'
+      },
+      {
+        id: 'next-webhook-route', path: '/api/webhooks/provider', method: 'POST',
+        file: `${workspace}/app/api/webhooks/provider/route.ts`, framework: 'nextjs',
+        authDetected: false, ownershipCheckDetected: false, bodyFields: [], dangerousBodyFields: [], prismaModels: [],
+        webhookSignatureDetected: true, uploadValidationDetected: false, sourceSummary: 'Signed webhook route.'
+      },
+      {
+        id: 'next-upload-route', path: '/api/upload', method: 'POST',
+        file: `${workspace}/app/api/upload/route.ts`, framework: 'nextjs',
+        authDetected: true, ownershipCheckDetected: true, bodyFields: [], dangerousBodyFields: [], prismaModels: [],
+        webhookSignatureDetected: false, uploadValidationDetected: true, sourceSummary: 'Validated upload route.'
       }
     ],
-    dataModels: [],
-    authBoundaries: [],
-    aiToolCalls: [],
+    dataModels: [{ name: 'Invoice', fields: ['id', 'tenantId'], file: `${workspace}/prisma/schema.prisma` }],
+    authBoundaries: [{ routeId: 'next-invoice-route', mechanism: 'requireUser', file: `${workspace}/src/session.ts` }],
+    aiToolCalls: [{ name: 'summarizeInvoice', file: `${workspace}/app/api/invoices/[id]/route.ts`, routePath: '/api/invoices/[id]', dangerous: false, guardrailsDetected: true }],
     docker: { files: [], services: [] },
     ci: { workflows: [], unsafeTriggers: [] },
     filesScanned: 1

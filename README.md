@@ -2,6 +2,26 @@
 
 **Build a local cyber range from your app. Prove reachable breach paths. Generate fixes. Verify they stay fixed.**
 
+BreachProof turns one authorized local command into a system map, safe security evidence, reviewable patch artifacts, project checks, final reports, and an offline 3D security Vault.
+
+```sh
+breachproof
+```
+
+On first use, an interactive terminal asks for ownership or explicit testing authorization. Automation must state that authorization with `--yes`:
+
+```sh
+breachproof --yes
+```
+
+The default run does not modify analyzed source. It prints report paths and finishes all local reports even when a detected build, lint, or test check fails. Open the generated dashboard only when requested:
+
+```sh
+breachproof --open
+```
+
+Primary outputs are `reports/final-report.{md,html,json,sarif}`, `reports/automation-summary.json`, and `reports/vault/index.html`.
+
 BreachProof is a local proof engine for repositories and environments you own or are explicitly authorized to test. It is not a scanner, not a CVE list, and not a generic AI wrapper. It maps your app, builds a fake-data local cyber range, tests security invariants, turns breach paths into replayable evidence, generates competing patch candidates, and produces audit-ready reports.
 
 ## What Makes BreachProof Different
@@ -37,7 +57,7 @@ BreachProof is defensive and local-first:
 - deterministic behavior without an LLM
 - optional online corpus imports only when explicitly requested
 
-By default, `breachproof run --auto` writes artifacts only. It does not edit the analyzed repository unless explicit apply mode is enabled.
+`breachproof`, `breachproof run`, and `breachproof run --auto` write generated artifacts only. The current implementation does not edit analyzed source, including when the legacy `--apply` option is supplied.
 
 ## Install
 

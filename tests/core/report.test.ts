@@ -16,7 +16,27 @@ describe('report generator', () => {
     const reachabilityGraph = await buildReachabilityGraph(fixtureRoot, systemMap);
     const attackGraph = buildAttackGraph(systemMap, corpus, reachabilityGraph);
     const findings = validateSystemMap(systemMap, attackGraph, corpus);
-    const report = createReportModel({ workspace: fixtureRoot, mode: 'local', systemMap, attackGraph, findings });
+    const report = createReportModel({
+      workspace: fixtureRoot,
+      mode: 'local',
+      systemMap,
+      attackGraph,
+      findings,
+      projectVerification: {
+        generatedAt: new Date().toISOString(),
+        checks: [{
+          name: 'node:test',
+          ecosystem: 'node',
+          command: ['npm', 'run', 'test'],
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 12,
+          logPath: 'reports/verification/node-test.log',
+          summary: 'Exited with code 0.'
+        }],
+        summary: { passed: 1, failed: 0, skipped: 0, timedOut: 0 }
+      }
+    });
 
     const markdown = renderMarkdownReport(report);
     const json = renderJsonReport(report);
@@ -26,9 +46,13 @@ describe('report generator', () => {
     expect(markdown).toContain('Project: sample-next-express');
     expect(markdown).toContain('Production touched: no');
     expect(markdown).toContain('Confirmed breach paths');
+    expect(markdown).toContain('Project checks');
+    expect(markdown).toContain('node:test: passed');
     expect(markdown).toContain('Cross-tenant or ownership check missing');
     expect(JSON.parse(json).findings.length).toBeGreaterThan(0);
+    expect(JSON.parse(json).projectVerification.summary.passed).toBe(1);
     expect(sarif.version).toBe('2.1.0');
     expect(sarif.runs[0]?.results.length).toBeGreaterThan(0);
+    expect(JSON.stringify(sarif)).not.toContain('node:test');
   });
 });
