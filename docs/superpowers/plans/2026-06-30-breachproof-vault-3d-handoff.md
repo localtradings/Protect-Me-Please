@@ -1,61 +1,60 @@
 # BreachProof Vault 3D Handoff
 
-Updated: 2026-06-30
+Updated: 2026-07-01
 
-## Resume Here
+## Final Status
 
 - Repository: `/Users/lanceianleanillo/Dowwnload/GitHub/Protect-Me-Please`
-- Active worktree: `/Users/lanceianleanillo/Dowwnload/GitHub/Protect-Me-Please/.worktrees/breachproof-vault-3d`
-- Branch: `feature/breachproof-vault-3d`
-- Implementation plan: `docs/superpowers/plans/2026-06-27-breachproof-vault-3d-memory-graph.md`
-- Main branch is unchanged at `b97a020` and tracks `origin/main`.
-- The feature branch has not been pushed. GitHub will not show these commits until an explicit push is requested.
+- Completed feature branch: `feature/breachproof-vault-3d`
+- Base commit: `a3f5479 test: verify BreachProof Vault end to end`
+- One-command completion: `620e418 feat: add one-command BreachProof automation`
+- Tasks 0–12, the Task 5 quality gate, offline Vault dashboard, and one-command completion are implemented.
+- The feature branch remains local-only until it is fast-forwarded into local `main`; no push is part of this handoff.
 
-## Current Status
+## Completed Product Behavior
 
-- Tasks 0-5 are complete and passed implementation, spec, and quality gates.
-- Task 6 implementation is committed at `98c3559`. Fresh controller verification passed: `npm run build:vault-ui`, 7/7 Vault report tests, typecheck, lint, and diff-check. Task 6 spec and quality reviews are still required.
-- Tasks 7-12 remain: procedural 3D scene, approved UI/interactions/fallback, workflow/CLI integration, Day 1/2/5 demo, docs/CI/licenses, and final visual/end-to-end verification.
+- Bare `breachproof`, `breachproof run`, and `breachproof run --auto` share the typed automatic workflow.
+- Missing approval prompts once in a TTY and fails closed in noninteractive use unless `--yes` is supplied.
+- Automatic fixes are limited to BreachProof-owned generated artifacts; analyzed source remains unchanged.
+- Root-level Node, Python, Go, and Rust project checks are detected, logged, and included in Markdown, HTML, and JSON reports.
+- Failed or timed-out project checks finish report and Vault generation before returning a nonzero exit code.
+- The offline Vault uses graph schema v2 with evidence-backed API route, model, auth gate, AI tool, webhook, upload, and file nodes.
+- The final console output and `reports/automation-summary.json` include system-map, fix-disposition, verification, lifecycle, project-check, rescan, report, and Vault details.
+- `/breachproof` instructions exist in `docs/commands/breachproof.md` and `.agent/commands/breachproof.md`.
 
-## Implemented
-
-- Offline Three.js/3d-force-graph build pipeline with Lucide, esbuild, and Playwright.
-- Typed Vault nodes, edges, timeline, lifecycle, history, patch memory, fingerprints, and similarity.
-- Append-only local SQLite Vault events with new/repeated/fixed/reopened/not-observed projection.
-- Artifact-backed graph edges, regression/reopening links, duplicate-event rejection, and deterministic summaries.
-- Redacted deterministic Markdown notes for findings, routes, invariants, patches, replays, runs, and daily history.
-- Escaped route security profile HTML with controls, evidence, invariants, patch memory, and history.
-- Offline report packaging with validated `graph.json`, `timeline.json`, embedded safe graph data, local CSP/assets, and route profile files.
-
-## Feature Commits
+## Preserved Output Paths
 
 ```text
-edd135b build: add offline Vault 3D renderer pipeline
-12dff20 fix: scope Vault test scripts
-2779373 feat: add deterministic Vault identities and similarity
-0124178 fix: harden Vault identity extraction and scoring
-4ea29f0 fix: make Vault identities order independent
-cc81a65 fix: keep Vault primary signals stable
-e9c3764 feat: persist append-only Vault security history
-870e9fb feat: project Vault graph timeline and patch memory
-715c2a9 fix: require artifact-backed vault edges
-57cb2a4 fix: tighten Task 4 vault graph fallbacks
-ed2945c fix: unify Vault lifecycle projection
-1d6ddf8 feat: generate Vault notes and route security profiles
-ed98489 fix: preserve Vault redaction content
-5caaf15 fix: harden Vault note projections
-6d38a6b fix: disambiguate Vault fallback note keys
-98c3559 feat: package offline Vault graph reports
+reports/final-report.md
+reports/final-report.html
+reports/final-report.json
+reports/final-report.sarif
+reports/automation-summary.json
+reports/vault/index.html
 ```
 
-## Immediate Next Step
+## Verification Evidence
 
-1. Run Task 6 spec review against `6d38a6b..98c3559`.
-2. Fix any spec gaps, rerun focused tests, then run Task 6 quality review.
-3. Mark Task 6 complete and start Task 7 from the approved geometry/color table in the design spec.
+The completed feature branch passed:
 
-## Safety And Scope
+- `npm run typecheck`
+- `npm run lint`
+- `npm test` — 18 test files and 104 tests passed
+- `npm run build`
+- `npm run test:browser` — 4 Playwright tests passed across desktop and mobile Chromium
+- Built bare-CLI smoke test with `--yes --no-verify`, including automation summary and Vault output checks
 
-- No paid services, billing pages, payment actions, destructive database operations, public-target scanning, or source auto-apply behavior were used.
-- Generated output remains local-first and offline.
-- Do not push, merge, or rewrite remote history unless the user explicitly requests it.
+Docker Engine 29.2.1 was installed, but its daemon was unavailable at `/var/run/docker.sock`; the Docker build was skipped and not represented as passing.
+
+## Local Integration Procedure
+
+1. Fast-forward local `main` to `feature/breachproof-vault-3d`.
+2. Rerun dependency setup, typecheck, lint, core tests, build, browser tests, and the built CLI smoke test on merged `main`.
+3. Remove the `.worktrees/breachproof-vault-3d` worktree, prune worktree metadata, and delete the merged feature branch.
+4. Keep local `main` ahead of `origin/main`; do not push unless the user explicitly requests it in a later chat.
+
+## Safety and Scope
+
+- No paid services, billing/payment pages, destructive database operations, public-target scanning, source auto-apply, deployment, or remote database changes were used.
+- Generated reports and persistent Vault history remain local-first and offline.
+- GitHub remains unchanged by this local merge procedure.
